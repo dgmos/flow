@@ -642,6 +642,11 @@ func checkNode(n *rawNode, typ string, params map[string]interface{}, rep *Repor
 		if op := toString(get("operation")); op == "sendAndWait" {
 			checkSendAndWait(n, get, rep)
 		}
+	case "dataTable":
+		rep.warn(n, "data tables use Options.DataTables (process memory by default); a table that does not exist yet is created on first use")
+		checkResourceOps(n, typ, get, rep)
+	case "hubspot", "googleGemini", "anthropic", "perplexity", "apify":
+		checkResourceOps(n, typ, get, rep)
 	case "form":
 		if op := toString(get("operation")); op == "" || op == "page" {
 			rep.warn(n, "form pages need Options.ResumeBaseURL/ResumeSecret; the /form endpoint returns the next page definition")
@@ -991,4 +996,67 @@ func repairNodeReferences(nodes []*rawNode) {
 	for _, n := range nodes {
 		walk(n.Parameters)
 	}
+}
+
+// resourceOps lists the supported resource/operation pairs of nodes that
+// implement only part of n8n's operations, with n8n's defaults.
+var resourceOps = map[string]struct {
+	defResource string
+	defOps      map[string]string
+	ops         map[string]string // resource -> operations, space-separated ("|" for Apify)
+}{
+	"dataTable": {"row", map[string]string{"row": "insert", "table": "list"}, map[string]string{
+		"row":   "insert get getAll append deleteRows delete update upsert rowExists rowNotExists",
+		"table": "list create clear update delete"}},
+	"hubspot": {"contact", map[string]string{"contact": "upsert", "company": "create", "deal": "create", "engagement": "create", "ticket": "create", "contactList": "add", "owner": "getAll"}, map[string]string{
+		"contact":     "upsert get getAll getRecentlyCreatedUpdated delete search",
+		"company":     "create update get getAll getRecentlyCreatedUpdated getRecentlyModified getRecentlyCreated searchByDomain delete search",
+		"deal":        "create update get getAll getRecentlyCreatedUpdated getRecentlyCreated getRecentlyModified delete search",
+		"engagement":  "create get getAll delete",
+		"ticket":      "create update get getAll delete",
+		"contactList": "add remove",
+		"owner":       "getAll"}},
+	"googleGemini": {"text", map[string]string{"text": "message", "image": "analyze", "video": "analyze", "audio": "transcribe", "document": "analyze", "file": "upload"}, map[string]string{
+		"text": "message", "image": "analyze generate edit", "video": "analyze generate download", "audio": "analyze transcribe", "document": "analyze", "file": "upload"}},
+	"anthropic": {"text", map[string]string{"text": "message", "image": "analyze", "document": "analyze", "file": "upload"}, map[string]string{
+		"text": "message", "image": "analyze", "document": "analyze", "file": "upload get list delete deleteFile"}},
+	"perplexity": {"chat", map[string]string{"chat": "complete"}, map[string]string{"chat": "complete"}},
+	"apify": {"Actors", map[string]string{"Actors": "Run actor", "Actor tasks": "Run task", "Actor runs": "Get user runs list", "Datasets": "Get items", "Key-Value Stores": "Get Key-Value Store Record",
+		"actor": "run", "dataset": "getItems"}, map[string]string{
+		"Actors":           "Run actor|Run actor and get dataset|Scrape single URL|Get last run|Get list of actors",
+		"Actor tasks":      "Run task|Run task and get dataset|Get list of tasks",
+		"Actor runs":       "Get run|Get runs|Get user runs list|Abort run",
+		"Datasets":         "Get items",
+		"Key-Value Stores": "Get Key-Value Store Record",
+		"actor":            "run", "dataset": "getItems"}},
+}
+
+func checkResourceOps(n *rawNode, typ string, get func(string) interface{}, rep *Report) {
+	spec, ok := resourceOps[short(typ)]
+	if !ok {
+		return
+	}
+	r, o := toString(get("resource")), toString(get("operation"))
+	if r == "" {
+		r = spec.defResource
+	}
+	if o == "" {
+		o = spec.defOps[r]
+	}
+	if strings.HasPrefix(r, "=") || strings.HasPrefix(o, "=") {
+		return // decided at run time
+	}
+	list, ok := spec.ops[r]
+	sep := " "
+	if spec.defResource == "Actors" {
+		sep = "|" // Apify's operation names contain spaces
+	}
+	if ok {
+		for _, x := range strings.Split(list, sep) {
+			if x == o {
+				return
+			}
+		}
+	}
+	rep.block(n, "%s %s/%s is not supported", n.Type[strings.LastIndex(n.Type, ".")+1:], r, o)
 }

@@ -48,7 +48,16 @@ type (
 	// N8NPollStateSwapper is an optional extension of N8NPollStateStore that
 	// advances cursors atomically so overlapping polls never emit duplicates.
 	N8NPollStateSwapper = n8n.PollStateSwapper
+	// N8NDataTableStore persists n8n Data Tables (N8NOptions.DataTables).
+	N8NDataTableStore = n8n.DataTableStore
+	// N8NDataTable is one n8n Data Table with its columns and rows.
+	N8NDataTable = n8n.DataTable
+	// N8NDataTableColumn is a typed Data Table column.
+	N8NDataTableColumn = n8n.DataTableColumn
 )
+
+// NewN8NMemoryDataTables returns a process-local N8NDataTableStore.
+func NewN8NMemoryDataTables() *n8n.MemoryDataTables { return n8n.NewMemoryDataTables() }
 
 // NewN8NStaticCredentials returns an empty in-memory credential store.
 func NewN8NStaticCredentials() *N8NStaticCredentials { return n8n.NewStaticCredentials() }

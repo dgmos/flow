@@ -26,6 +26,8 @@ read the [Upgrade guide](#upgrade-guide) first.
 - MCP: Server Trigger (Streamable HTTP and SSE at `/mcp/{path}`, each tool call is an execution), MCP Client Tool for agents, community MCP Client node (STDIO only with `Options.AllowLocalProcesses`).
 - Opt-in local execution (`N8NOptions.AllowLocalProcesses`, off by default): Execute Command, Python Code (Pyodide-style globals on a local `python3`, `N8NOptions.PythonPath`) and STDIO MCP servers. Local File Trigger (polling, inside `FileSystemRoot`).
 - Community nodes: Tavily, ScrapeNinja, InfraNodus, Blotato, YouTube Transcript (also `require('youtube-transcript')` in Code); `{placeholder}` arguments of community AI tools.
+- Data Table node (row insert/get/update/upsert/delete/exists, table create/list/clear/rename/delete) on a pluggable `N8NOptions.DataTables` store; tables referenced by imported templates are created on first use. HubSpot (v1–v2.x: contacts, companies, deals, engagements, tickets, contact lists, owners), Google Gemini and Anthropic vendor nodes, Perplexity, Apify, AI Agent Tool, and tool variants of the Gemini/Anthropic/OpenAI vendor nodes.
+- Whole-gallery benchmark: `scripts/fetch-n8n-templates.sh` downloads all public templates; 10,198 of 14,314 (71.2%) import and run. The report shows the cumulative share each blocker unlocks and groups blocked templates by what they need. Unsupported operations of partially implemented nodes are reported at import.
 
 ### Engine
 

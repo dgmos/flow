@@ -2,7 +2,7 @@
 
 Flow can import and run [n8n](https://n8n.io) workflow exports. Every n8n node becomes a durable engine step, so imported workflows get flow's retries, leases, concurrency and persistence while keeping n8n's data model (items, paired items, expressions).
 
-Measured on the 299 most-viewed public n8n templates, **all 299 import and run**; 297 work fully (credentials still have to be provided) and 2 contain unfilled placeholders (such as `{{voice id}}`) that make that one node fail when it runs, exactly as in n8n. The importer reports such expressions as warnings and repairs unescaped quotes in node references (`$('Doesn't Exist')`). Execute Command, Python Code, STDIO MCP servers and the Local File Trigger need opt-in options (see Security). The importer reports exactly what is missing or needs configuration.
+Measured on the **entire public n8n template gallery (14,314 templates), 10,198 (71.2%) import and run**; the rest are reported with the exact nodes they miss (mostly integrations and community nodes not built in yet, see the benchmark below). On the 299 most-viewed templates, **all 299 import and run**; 297 work fully (credentials still have to be provided) and 2 contain unfilled placeholders (such as `{{voice id}}`) that make that one node fail when it runs, exactly as in n8n. The importer reports such expressions as warnings and repairs unescaped quotes in node references (`$('Doesn't Exist')`). Execute Command, Python Code, STDIO MCP servers and the Local File Trigger need opt-in options (see Security). The importer reports exactly what is missing or needs configuration.
 
 ## Quick start
 
@@ -76,9 +76,9 @@ Read results with `flow.N8NOutputItems(execution.Output)`.
 
 **Flow & data:** IF, Switch, Filter, Merge (append, combine by fields / position / all, choose branch, v1 modes), Loop Over Items, Split In Batches v1/v2 (with `$node["X"].context.noItemsLeft`), Set / Edit Fields (v1–v3.4), Code (JavaScript, both modes), Function, Function Item, Split Out, Aggregate, Summarize, Limit, Sort, Remove Duplicates (incl. items seen in previous executions: keys, incremental, date; node/workflow scope), Item Lists, No Op, Wait (time, date, webhook), Stop and Error, Execute Workflow (database / inline JSON, once / each), Respond to Webhook (JSON, text, binary, redirect), Date & Time, XML, HTML (template, extract, table), HTML Extract, Markdown, Extract from File (PDF, CSV, XLSX, ODS, text, JSON, HTML, base64), Convert to File (CSV, XLSX, JSON, text, HTML, base64), Spreadsheet File (read CSV/XLSX/ODS, write CSV/XLSX), Compression (zip/gzip, size-limited), Read PDF, Crypto (hash, HMAC, generate), Execution Data, RSS Read, Edit Image (resize, information), Read/Write Files (sandboxed), Form (pages, completion).
 
-**Integrations:** HTTP Request (v1–v4, all auth types except Digest/OAuth1; pagination by parameter or next URL, completion by empty response, status codes or expression), Telegram, Gmail, YouTube (video search/get/update/upload/delete), GitHub, Hacker News, Reddit, Twilio (+ trigger), OpenWeatherMap, urlscan.io, APITemplate.io, uProc, WooCommerce, Microsoft OneDrive / Excel / Teams / Outlook trigger, Baserow, NocoDB, Odoo, Jira, Ghost, Dropbox, Google Tasks, Google Analytics (GA4), S3 (any S3-compatible endpoint, SigV4), MongoDB, Google Sheets, Google Drive (v3, and v1/v2 upload/download/copy/delete/share/folder create), Google Calendar, Google Docs, Slack, Discord, WhatsApp, Notion, Airtable, WordPress, X (Twitter), LinkedIn, Microsoft Outlook, Facebook Graph API, Postgres, MySQL (execute query), Redis, Supabase, Send Email (SMTP), OpenAI (legacy and LangChain node).
+**Integrations:** HTTP Request (v1–v4, all auth types except Digest/OAuth1; pagination by parameter or next URL, completion by empty response, status codes or expression), Telegram, Gmail, YouTube (video search/get/update/upload/delete), HubSpot (contacts, companies, deals, engagements, tickets, contact lists, owners; API key, private app token or OAuth2), Perplexity, Data Table (n8n's built-in tables, see `DataTables`), GitHub, Hacker News, Reddit, Twilio (+ trigger), OpenWeatherMap, urlscan.io, APITemplate.io, uProc, WooCommerce, Microsoft OneDrive / Excel / Teams / Outlook trigger, Baserow, NocoDB, Odoo, Jira, Ghost, Dropbox, Google Tasks, Google Analytics (GA4), S3 (any S3-compatible endpoint, SigV4), MongoDB, Google Sheets, Google Drive (v3, and v1/v2 upload/download/copy/delete/share/folder create), Google Calendar, Google Docs, Slack, Discord, WhatsApp, Notion, Airtable, WordPress, X (Twitter), LinkedIn, Microsoft Outlook, Facebook Graph API, Postgres, MySQL (execute query), Redis, Supabase, Send Email (SMTP), OpenAI (legacy and LangChain node).
 
-**AI:** AI Agent (tools, memory, output parsers), Basic LLM Chain, Question and Answer Chain, Summarization Chain, Text Classifier, Information Extractor, Sentiment Analysis, OpenAI. Chat models: OpenAI, Anthropic, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI, Ollama. Memory: window buffer (Postgres/Redis/Mongo/… chat memories map to the configured chat memory store). Output parsers: structured, auto-fixing, item list. Tools: Call Workflow, HTTP Request, Code, Calculator, Think, Wikipedia, SerpAPI, vector store tools, and **any supported integration as a tool** (`gmailTool`, `googleSheetsTool`, `telegramTool`, … with `$fromAI()`).
+**AI:** AI Agent (tools, memory, output parsers), AI Agent Tool (an agent with its own model, tools and memory used as another agent's tool), Google Gemini (message with tools and Google Search, analyze image/document/audio/video incl. YouTube URLs, transcribe, generate/edit images, Veo video, file upload), Anthropic (message with tools and web search, analyze image/document, Files API), Basic LLM Chain, Question and Answer Chain, Summarization Chain, Text Classifier, Information Extractor, Sentiment Analysis, OpenAI. Chat models: OpenAI, Anthropic, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI, Ollama. Memory: window buffer (Postgres/Redis/Mongo/… chat memories map to the configured chat memory store). Output parsers: structured, auto-fixing, item list. Tools: Call Workflow, HTTP Request, Code, Calculator, Think, Wikipedia, SerpAPI, vector store tools, and **any supported integration as a tool** (`gmailTool`, `googleSheetsTool`, `telegramTool`, … with `$fromAI()`).
 
 **RAG:** Default Data Loader (JSON, PDF, text, CSV), recursive / token / character text splitters, OpenAI / Gemini / Mistral / Ollama embeddings, vector stores In-Memory, Qdrant, Pinecone and Supabase (insert, load, retrieve, retrieve-as-tool). Data is stored in LangChain's layout, so collections created by n8n remain readable.
 
@@ -90,7 +90,7 @@ Waits longer than 65 seconds do not hold a worker: the step is stored as waiting
 
 ## Community nodes
 
-Tavily, ScrapeNinja, InfraNodus, Blotato and YouTube Transcript are built in; `{placeholder}` values in community AI tools become tool arguments. Other community nodes are reported at import.
+Apify (run actors and tasks, datasets, runs, key-value stores), Tavily, ScrapeNinja, InfraNodus, Blotato and YouTube Transcript are built in; `{placeholder}` values in community AI tools become tool arguments. Other community nodes are reported at import.
 
 ## MCP
 
@@ -135,16 +135,18 @@ OAuth2 credentials (Google, Slack, Microsoft, X, LinkedIn, …) must return a va
 |---|---|---|
 | `ChatMemory` | process memory | AI chat history store |
 | `PollState` | process memory | Polling-trigger cursors and dedupe history |
+| `DataTables` | process memory | n8n Data Tables (`N8NDataTableStore`, `NewN8NMemoryDataTables`) |
 | `WorkflowResolver` | IDs as-is | Map n8n workflow IDs (Execute Workflow, tools) to flow IDs |
 | `Timezone` | host zone | Default zone for `$now` / `DateTime` when the workflow has none |
 | `APIBaseURLs` | official APIs | Route integrations through a proxy |
 
-Provide durable `ChatMemory` and `PollState` implementations when running several instances. If your `PollState` also implements `N8NPollStateSwapper` (`CompareAndSwapPollState`), cursors advance atomically and overlapping polls never emit the same items twice; otherwise polls are only serialized within one process.
+Provide durable `ChatMemory`, `PollState` and `DataTables` implementations when running several instances. Templates reference data tables of their author's n8n instance, so a Data Table node looks a table up by ID, then by name, and otherwise creates it (empty, with columns added as rows are written). If your `PollState` also implements `N8NPollStateSwapper` (`CompareAndSwapPollState`), cursors advance atomically and overlapping polls never emit the same items twice; otherwise polls are only serialized within one process.
 
 ## Measuring compatibility
 
 ```bash
-N8N_CORPUS_DIR=/path/to/templates go test -tags n8ncorpus -run Corpus -v ./internal/n8n
+scripts/fetch-n8n-templates.sh /tmp/n8n-templates   # the whole public gallery (re-runs fetch only new ones)
+N8N_CORPUS_DIR=/tmp/n8n-templates go test -tags n8ncorpus -run Corpus -v ./internal/n8n
 ```
 
-The benchmark imports every JSON file in the directory, checks that runnable workflows register and start, and ranks the remaining blockers by how many templates each would unlock.
+The benchmark imports every JSON file in the directory, checks that runnable workflows register and start, and ranks the remaining blockers by how many templates each would unlock, with the cumulative share after each (`N8N_CORPUS_GREEDY=60` for a longer list). It also groups blocked templates by what they wait for: a service node, a service trigger, an AI node, a community node or an engine feature.

@@ -128,6 +128,9 @@ func nodeTypes() map[string]nodeFunc {
 		b + "n8n":                          n8nAPINode,
 		b + "executeCommand":               executeCommandNode,
 		b + "localFileTrigger":             localFileTriggerNode,
+		b + "dataTable":                    dataTableNode,
+		b + "hubspot":                      hubspotNode,
+		b + "perplexity":                   perplexityNode,
 		b + "if":                           ifNode,
 		b + "filter":                       filterNode,
 		b + "switch":                       switchNode,
@@ -239,6 +242,7 @@ func extraNodeTypes(opts *Options) map[string]nodeFunc {
 		"n8n-nodes-mcp.mcpClient":            mcpCommunityNode,
 		"n8n-nodes-mcp.mcpClientTool":        mcpCommunityNode,
 		"@tavily/n8n-nodes-tavily.tavily":    tavilyNode,
+		"@apify/n8n-nodes-apify.apify":       apifyNode,
 		"CUSTOM.scrapeNinja":                 scrapeNinjaNode,
 		"n8n-nodes-scrapeninja.scrapeNinja":  scrapeNinjaNode,
 		"n8n-nodes-infranodus.infranodus":    infranodusNode,
@@ -247,6 +251,8 @@ func extraNodeTypes(opts *Options) map[string]nodeFunc {
 		lc + "vectorStorePGVector":                            vectorStoreNode,
 		lc + "vectorStoreMongoDBAtlas":                        vectorStoreNode,
 		lc + "informationExtractor":                           informationExtractorNode,
+		lc + "googleGemini":                                   googleGeminiNode,
+		lc + "anthropic":                                      anthropicNode,
 	}
 }
 
