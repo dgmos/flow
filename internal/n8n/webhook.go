@@ -113,6 +113,13 @@ func (h *Handler) routes(ctx context.Context, force bool) (map[string]routeTarge
 						idx["webhook "+m+" "+path] = routeTarget{wf.ID, n, "webhook"}
 					}
 				}
+			case serviceHooks[n.Type].handle != nil:
+				id := serviceHookPath(n)
+				for _, m := range serviceHooks[n.Type].allowed() {
+					if _, taken := idx["webhook "+m+" "+id]; !taken {
+						idx["webhook "+m+" "+id] = routeTarget{wf.ID, n, "service"}
+					}
+				}
 			case rawBodyTriggers[n.Type]:
 				id := toString(n.Config["__webhookId"])
 				if id == "" {
@@ -182,6 +189,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, h.opts.MaxBodyBytes+1))
 	if err != nil || int64(len(body)) > h.opts.MaxBodyBytes {
 		httpError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		return
+	}
+	if target.kind == "service" {
+		h.serveServiceHook(w, r, body, target)
 		return
 	}
 	if err := h.authorize(r, target); err != nil {

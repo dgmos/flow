@@ -202,7 +202,7 @@ var knownCredentialDomains = map[string][]string{
 	"urlscanio": {"urlscan.io"}, "apitemplateio": {"api.apitemplate.io"}, "uproc": {"api.uproc.com"},
 	"googletasks": {"googleapis.com"}, "googleanalytics": {"googleapis.com"}, "microsoftteams": {"graph.microsoft.com"},
 	"microsoftonedrive": {"graph.microsoft.com"}, "microsoftexcel": {"graph.microsoft.com"},
-	"dhl":    {"dhl.com"},
+	"dhl": {"dhl.com"}, "apify": {"api.apify.com", "apify.actor"},
 	"stripe": {"api.stripe.com"}, "shopify": {"myshopify.com"}, "pinecone": {"pinecone.io"}, "supabase": {"supabase.co"},
 }
 

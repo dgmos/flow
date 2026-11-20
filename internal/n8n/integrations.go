@@ -38,6 +38,7 @@ type rawResp struct {
 	body        []byte
 	contentType string
 	status      int
+	header      http.Header
 }
 
 // doRequest sends a request through the outbound policy.
@@ -65,7 +66,7 @@ func (ec *execCtx) doRequest(method, u string, headers map[string]string, body [
 	if err != nil {
 		return rawResp{}, err
 	}
-	r := rawResp{body: raw, contentType: resp.Header.Get("Content-Type"), status: resp.StatusCode}
+	r := rawResp{body: raw, contentType: resp.Header.Get("Content-Type"), status: resp.StatusCode, header: resp.Header}
 	if resp.StatusCode >= 400 {
 		msg := fmt.Sprintf("%s %s failed with status %d: %s", method, redactURL(u), resp.StatusCode, truncate(string(raw), 400))
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {

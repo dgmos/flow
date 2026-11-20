@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -90,8 +91,13 @@ func TestCorpus(t *testing.T) {
 		}
 	}
 	// Greedy: which blockers, once fixed, unlock the most templates.
+	steps := 25
+	if n, err := strconv.Atoi(os.Getenv("N8N_CORPUS_GREEDY")); err == nil && n > 0 {
+		steps = n
+	}
 	fixed := map[string]bool{}
-	for step := 0; step < 25; step++ {
+	cum := runnable
+	for step := 0; step < steps; step++ {
 		gain := map[string]int{}
 		for _, s := range perTemplate {
 			var open []string
@@ -114,11 +120,31 @@ func TestCorpus(t *testing.T) {
 			break
 		}
 		fixed[best] = true
-		t.Logf("greedy %2d: +%d  %s", step+1, bg, best)
+		cum += bg
+		t.Logf("greedy %2d: +%-3d → %5.1f%%  %s", step+1, bg, 100*float64(cum)/float64(max(total, 1)), best)
 	}
 	t.Logf("runnable but failed to register/start: %d", startFail)
 	t.Logf("runnable with an invalid expression (fails at that node, as in n8n): %d", exprWarn)
 	t.Logf("templates: %d  runnable: %d (%.1f%%)  import errors: %d", total, runnable, 100*float64(runnable)/float64(max(total, 1)), failed)
+	// What kind of work unblocks each template: a template counts under a
+	// category when all of its blockers are in that category.
+	cats := map[string]int{}
+	for _, s := range perTemplate {
+		kinds := map[string]bool{}
+		for k := range s {
+			kinds[blockerKind(k)] = true
+		}
+		if len(kinds) == 1 {
+			for k := range kinds {
+				cats["only "+k]++
+			}
+		} else {
+			cats["mixed"]++
+		}
+	}
+	for _, k := range []string{"only service node", "only service trigger", "only AI node", "only community node", "only feature", "mixed"} {
+		t.Logf("blocked, %-22s %5d", k+":", cats[k])
+	}
 	type kv struct {
 		k string
 		v int
@@ -134,4 +160,22 @@ func TestCorpus(t *testing.T) {
 		}
 		t.Logf("%4d  %s", r.v, r.k)
 	}
+}
+
+// blockerKind classifies a normalized blocking reason.
+func blockerKind(k string) string {
+	switch {
+	case strings.HasPrefix(k, "trigger "):
+		return "service trigger"
+	case strings.HasPrefix(k, "node type n8n-nodes-base."):
+		if strings.HasSuffix(k, "Trigger") {
+			return "service trigger"
+		}
+		return "service node"
+	case strings.HasPrefix(k, "node type @n8n/n8n-nodes-langchain."):
+		return "AI node"
+	case strings.HasPrefix(k, "node type "):
+		return "community node"
+	}
+	return "feature"
 }
