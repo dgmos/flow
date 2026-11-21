@@ -465,12 +465,14 @@ func (ec *execCtx) buildTool(s subNode, i int) (aiTool, error) {
 			}}, nil
 	case "toolHttpRequest", "httpRequestTool":
 		return ec.httpTool(s, name, desc, fromProps, fromReq)
+	case "agentTool":
+		return ec.agentTool(s, name, desc, i), nil
 	}
 	if st == "toolVectorStore" || vectorStoreTypes[st] {
 		return ec.vectorStoreTool(s, i)
 	}
 	if fn, ok := integrationToolBase(s.typ); ok {
-		if !strings.HasPrefix(s.typ, "n8n-nodes-base.") {
+		if isCommunityType(s.typ) {
 			// Community tools mark AI-provided values as {placeholder}.
 			for _, ph := range placeholders(p) {
 				if _, ok := fromProps[ph]; !ok {
@@ -792,52 +794,102 @@ func (ec *execCtx) hasParam(path string) bool {
 func agentNode(ec *execCtx) ([][]Item, error) {
 	var out []Item
 	for i := range ec.items() {
-		model, base, err := ec.buildModel(i)
+		j, err := ec.agentItem(i)
 		if err != nil {
 			return nil, err
 		}
-		prompt, err := ec.promptFor(i, "text")
-		if err != nil {
-			return nil, err
-		}
-		system, _ := ec.str(i, "options.systemMessage", "You are a helpful assistant")
-		maxIter, _ := ec.num(i, "options.maxIterations", 10)
-		tools, err := ec.buildTools(i)
-		if err != nil {
-			return nil, err
-		}
-		mem, err := ec.buildMemory(i)
-		if err != nil {
-			return nil, err
-		}
-		var parser *outputParser
-		if ok, _ := ec.boolean(i, "hasOutputParser", false); ok || len(aiSubNodes(ec.node.Config, "ai_outputParser")) > 0 {
-			if parser, err = ec.buildParser(i); err != nil {
-				return nil, err
-			}
-		}
-		if parser != nil {
-			system += "\n\n" + parser.instructions()
-		}
-		res, err := ec.runAgent(ec.ctx, model, base, system, prompt, tools, mem, int(maxIter))
-		if err != nil {
-			return nil, err
-		}
-		j := map[string]interface{}{"output": res.text}
-		if parser != nil {
-			v, err := parseWithFix(ec.ctx, model, base, parser, res.text)
-			if err != nil {
-				return nil, err
-			}
-			j["output"] = v
-		}
-		if ret, _ := ec.boolean(i, "options.returnIntermediateSteps", false); ret {
-			j["intermediateSteps"] = res.steps
-		}
-		mem.save(ec.ctx, prompt, res.text)
 		out = append(out, Item{JSON: j, PairedItem: paired(i)})
 	}
 	return [][]Item{out}, nil
+}
+
+// agentItem runs the AI Agent for item i.
+func (ec *execCtx) agentItem(i int) (map[string]interface{}, error) {
+	model, base, err := ec.buildModel(i)
+	if err != nil {
+		return nil, err
+	}
+	prompt, err := ec.promptFor(i, "text")
+	if err != nil {
+		return nil, err
+	}
+	system, _ := ec.str(i, "options.systemMessage", "You are a helpful assistant")
+	maxIter, _ := ec.num(i, "options.maxIterations", 10)
+	tools, err := ec.buildTools(i)
+	if err != nil {
+		return nil, err
+	}
+	mem, err := ec.buildMemory(i)
+	if err != nil {
+		return nil, err
+	}
+	var parser *outputParser
+	if ok, _ := ec.boolean(i, "hasOutputParser", false); ok || len(aiSubNodes(ec.node.Config, "ai_outputParser")) > 0 {
+		if parser, err = ec.buildParser(i); err != nil {
+			return nil, err
+		}
+	}
+	if parser != nil {
+		system += "\n\n" + parser.instructions()
+	}
+	res, err := ec.runAgent(ec.ctx, model, base, system, prompt, tools, mem, int(maxIter))
+	if err != nil {
+		return nil, err
+	}
+	j := map[string]interface{}{"output": res.text}
+	if parser != nil {
+		v, err := parseWithFix(ec.ctx, model, base, parser, res.text)
+		if err != nil {
+			return nil, err
+		}
+		j["output"] = v
+	}
+	if ret, _ := ec.boolean(i, "options.returnIntermediateSteps", false); ret {
+		j["intermediateSteps"] = res.steps
+	}
+	mem.save(ec.ctx, prompt, res.text)
+	return j, nil
+}
+
+// agentToolDefaultPrompt is the AI Agent Tool's default prompt parameter.
+const agentToolDefaultPrompt = "={{ $fromAI('Prompt__User_Message_', ``, 'string') }}"
+
+// agentTool exposes an AI Agent Tool sub-node (an agent with its own model,
+// tools and memory) as a tool of its parent agent.
+func (ec *execCtx) agentTool(s subNode, name, desc string, i int) aiTool {
+	if _, ok := s.params()["text"]; !ok {
+		cfg := cloneJSON(s.config)
+		p := cloneJSON(s.params())
+		p["text"] = agentToolDefaultPrompt
+		cfg[cfgParams] = p
+		s = subNode{typ: s.typ, config: cfg}
+	}
+	props, req := fromAISchema(s.params())
+	schema := querySchema
+	if len(props) > 0 {
+		schema = objSchema(props, req)
+	}
+	return aiTool{def: toolDef{Name: name, Description: firstNonEmpty(desc, "Delegates the task to a specialized AI agent."), Schema: schema},
+		run: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			tc, err := ec.toolCtx(s, args)
+			if err != nil {
+				return "", err
+			}
+			p := cloneJSON(tc.params)
+			p["promptType"] = "define"
+			if len(props) == 0 && strings.TrimSpace(toString(p["text"])) == "" {
+				p["text"] = toString(args["query"])
+			}
+			tc.params = p
+			j, err := tc.agentItem(i)
+			if err != nil {
+				return "", err
+			}
+			if s, ok := j["output"].(string); ok {
+				return s, nil
+			}
+			return mustJSON(j["output"]), nil
+		}}
 }
 
 func parseWithFix(ctx context.Context, model chatModel, base llmRequest, p *outputParser, text string) (interface{}, error) {
@@ -1165,16 +1217,29 @@ func informationExtractorNode(ec *execCtx) ([][]Item, error) {
 
 // integrationToolBase maps "<node>Tool" to the regular node's implementation.
 func integrationToolBase(typ string) (nodeFunc, bool) {
-	if !strings.HasSuffix(typ, "Tool") || strings.HasPrefix(typ, "@n8n/") {
+	if !strings.HasSuffix(typ, "Tool") {
 		return nil, false
 	}
 	base := strings.TrimSuffix(typ, "Tool")
+	if strings.HasPrefix(typ, "@n8n/") && !vendorToolBases[short(base)] {
+		return nil, false
+	}
 	if fn, ok := nodeTypes()[base]; ok {
 		return fn, true
 	}
 	fn, ok := extraNodeTypes(&Options{})[base]
 	return fn, ok
 }
+
+// isCommunityType reports whether a node type comes from a community
+// package rather than n8n itself.
+func isCommunityType(typ string) bool {
+	return !strings.HasPrefix(typ, "n8n-nodes-base.") && !strings.HasPrefix(typ, "@n8n/")
+}
+
+// vendorToolBases are AI vendor nodes that n8n also offers as tools
+// (e.g. googleGeminiTool).
+var vendorToolBases = map[string]bool{"googleGemini": true, "anthropic": true, "openAi": true}
 
 // integrationTool exposes a regular integration node (e.g. Gmail) as an AI
 // tool; its $fromAI() parameters become the tool's arguments.
@@ -1184,7 +1249,7 @@ func (ec *execCtx) integrationTool(s subNode, fn nodeFunc, name, desc string, pr
 	}
 	return aiTool{def: toolDef{Name: name, Description: desc, Schema: objSchema(props, req)},
 		run: func(ctx context.Context, args map[string]interface{}) (string, error) {
-			if !strings.HasPrefix(s.typ, "n8n-nodes-base.") {
+			if isCommunityType(s.typ) {
 				s = withPlaceholders(s, args)
 			}
 			tc, err := ec.toolCtx(s, args)
@@ -1226,7 +1291,7 @@ func aiSubNodeSupported(typ string) bool {
 	}
 	switch s {
 	case "outputParserStructured", "outputParserAutofixing", "outputParserItemList",
-		"toolWorkflow", "toolCode", "toolCalculator", "toolThink", "toolWikipedia", "toolSerpApi", "toolHttpRequest", "httpRequestTool":
+		"toolWorkflow", "toolCode", "toolCalculator", "toolThink", "toolWikipedia", "toolSerpApi", "toolHttpRequest", "httpRequestTool", "agentTool":
 		return true
 	case "mcpClientTool":
 		return strings.HasPrefix(typ, "@n8n/")

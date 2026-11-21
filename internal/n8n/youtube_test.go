@@ -73,3 +73,37 @@ func TestYouTubeNode(t *testing.T) {
 		t.Fatal("upload output")
 	}
 }
+
+func TestYouTubeChannelsAndPlaylists(t *testing.T) {
+	f := newFakeAPI(t, func(r recorded) (int, string, interface{}) {
+		switch {
+		case r.path == "/youtube/v3/channels":
+			return 200, "application/json", map[string]interface{}{"items": []interface{}{map[string]interface{}{"id": "UC1"}}}
+		case r.path == "/youtube/v3/playlistItems" && r.method == "GET":
+			if strings.Contains(r.query, "pageToken=p2") {
+				return 200, "application/json", map[string]interface{}{"items": []interface{}{map[string]interface{}{"id": "pi3"}}}
+			}
+			return 200, "application/json", map[string]interface{}{"items": []interface{}{map[string]interface{}{"id": "pi1"}, map[string]interface{}{"id": "pi2"}}, "nextPageToken": "p2"}
+		case r.path == "/youtube/v3/playlistItems" && r.method == "POST":
+			return 200, "application/json", map[string]interface{}{"id": "new"}
+		}
+		return 404, "application/json", map[string]interface{}{}
+	})
+	cred := map[string]map[string]interface{}{"youTubeOAuth2Api": {"accessToken": "yt"}}
+	out := restRun(t, f, "youtube", "youTube", map[string]interface{}{"part": []interface{}{"*"}, "returnAll": true, "filters": map[string]interface{}{}}, cred)
+	if len(out) != 1 || out[0]["id"] != "UC1" {
+		t.Fatalf("channels: %v", out)
+	}
+	if q := f.find(t, "GET", "/channels").query; !strings.Contains(q, "mine=true") || !strings.Contains(q, "part=brandingSettings%2C") {
+		t.Fatalf("channels query %q", q)
+	}
+	out = restRun(t, f, "youtube", "youTube", map[string]interface{}{"resource": "playlistItem", "operation": "getAll", "playlistId": "PL1", "part": []interface{}{"snippet"}, "returnAll": true}, cred)
+	if len(out) != 3 {
+		t.Fatalf("playlist items: %v", out)
+	}
+	out = restRun(t, f, "youtube", "youTube", map[string]interface{}{"resource": "playlistItem", "playlistId": "PL1", "videoId": "v1", "options": map[string]interface{}{"position": 0}}, cred)
+	b := jsonBody(t, f.find(t, "POST", "/playlistItems"))
+	if out[0]["id"] != "new" || jpath(b, "snippet.resourceId.videoId") != "v1" || jpath(b, "snippet.resourceId.kind") != "youtube#video" || jpath(b, "snippet.position") != float64(0) {
+		t.Fatalf("add: %v %v", out, b)
+	}
+}

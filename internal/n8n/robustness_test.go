@@ -112,3 +112,17 @@ func TestCredentialDomainBinding(t *testing.T) {
 func engineOpts() engine.WorkerOptions {
 	return engine.WorkerOptions{Concurrency: 2, PollInterval: 2 * time.Millisecond}
 }
+
+// An AI connection drawn from a root node to its model (the wrong way) is
+// reported instead of producing a workflow with a dangling edge.
+func TestReversedAIConnectionIsBlocked(t *testing.T) {
+	data := wfJSON(t, []map[string]interface{}{
+		nd("Start", "manualTrigger", 1, nil),
+		lc("Agent", "agent", 2.2, map[string]interface{}{"promptType": "define", "text": "hi"}),
+		lc("Model", "lmChatOpenAi", 1.2, nil),
+	}, "Start->Agent", "Agent~ai_languageModel->Model")
+	_, rep, err := Import(data, ImportOptions{})
+	if err != nil || rep.Runnable || !strings.Contains(mustJSON(rep.Blocking), "not a sub-node") {
+		t.Fatalf("err=%v runnable=%v blocking=%+v", err, rep.Runnable, rep.Blocking)
+	}
+}

@@ -2,7 +2,7 @@
 
 Flow, [n8n](https://n8n.io) workflow export'larını içe aktarıp çalıştırabilir. Her n8n node'u kalıcı bir engine adımına dönüşür. Böylece içe aktarılan workflow'lar n8n'in veri modelini (item'lar, paired item'lar, ifadeler) korurken flow'un retry, lease, eşzamanlılık ve kalıcılık özelliklerinden yararlanır.
 
-En çok görüntülenen 299 public n8n şablonu üzerinde yapılan ölçümde **299'unun tamamı** içe aktarılıp çalışıyor. 297'si eksiksiz çalışıyor (credential'ların yine de sağlanması gerekir). 2'sinde `{{voice id}}` gibi doldurulmamış yer tutucular var; bu yüzden o tek node, n8n'de olduğu gibi, çalıştığında hata veriyor. Importer bu ifadeleri uyarı olarak raporlar ve node referanslarındaki kaçışsız tırnakları (`$('Doesn't Exist')`) onarır. Execute Command, Python Code, STDIO MCP sunucuları ve Local File Trigger için opsiyonların açılması gerekir (bkz. Güvenlik). Importer eksik olanı ya da gereken yapılandırmayı tam olarak raporlar.
+**n8n'in public şablon galerisinin tamamında (14.314 şablon) 12.179'u (%85,1)** içe aktarılıp çalışıyor; kalanlar için importer eksik node'ları tek tek raporlar (çoğunlukla henüz yerleşik olmayan entegrasyonlar ve community node'ları, aşağıdaki ölçüme bakın). En çok görüntülenen 299 public n8n şablonu üzerinde yapılan ölçümde **299'unun tamamı** içe aktarılıp çalışıyor. 297'si eksiksiz çalışıyor (credential'ların yine de sağlanması gerekir). 2'sinde `{{voice id}}` gibi doldurulmamış yer tutucular var; bu yüzden o tek node, n8n'de olduğu gibi, çalıştığında hata veriyor. Importer bu ifadeleri uyarı olarak raporlar ve node referanslarındaki kaçışsız tırnakları (`$('Doesn't Exist')`) onarır. Execute Command, Python Code, STDIO MCP sunucuları ve Local File Trigger için opsiyonların açılması gerekir (bkz. Güvenlik). Importer eksik olanı ya da gereken yapılandırmayı tam olarak raporlar.
 
 ## Hızlı başlangıç
 
@@ -67,13 +67,16 @@ Sonuçları `flow.N8NOutputItems(execution.Output)` ile okuyun.
 ## Desteklenenler
 
 - **Trigger'lar ve akış/veri node'ları:** IF, Switch, Merge, Loop, Code (JavaScript), Set ve diğerleri.
-- **Entegrasyonlar:** HTTP Request, Telegram, Gmail, IMAP (polling), YouTube, GitHub, Reddit, Twilio, Jira, MongoDB, S3, Dropbox, Microsoft OneDrive/Excel/Teams, Baserow, NocoDB, Odoo, Ghost, WooCommerce, Google Tasks/Analytics, Google Sheets/Drive/Calendar/Docs, Slack, Discord, WhatsApp, Notion, Airtable, WordPress, X, LinkedIn, Outlook, Postgres, MySQL, Redis, Supabase, SMTP.
-- **AI:** Agent (tool, memory ve output parser'larla), LLM zincirleri; OpenAI, Anthropic, Gemini, OpenRouter, Ollama ve diğer modeller; desteklenen her entegrasyonun AI tool olarak kullanımı.
-- **RAG:** Vektör veritabanları (In-Memory, Qdrant, Pinecone, Supabase).
+- **Entegrasyonlar:** HTTP Request, HubSpot, Perplexity, Data Table (n8n'in yerleşik tabloları; `DataTables` opsiyonu, şablonun referans verdiği tablo yoksa ilk kullanımda oluşturulur), Apify, Telegram, Gmail, IMAP (polling), YouTube, GitHub, Reddit, Twilio, Jira, MongoDB, S3, Dropbox, Microsoft OneDrive/Excel/Teams, Baserow, NocoDB, Odoo, Ghost, WooCommerce, Google Tasks/Analytics, Google Sheets/Drive/Calendar/Docs, Slack, Discord, WhatsApp, Notion, Airtable, WordPress, X, LinkedIn, Outlook, Postgres, MySQL, Redis, Supabase, SMTP.
+- **AI:** Agent (tool, memory ve output parser'larla), başka bir agent'ın aracı olarak AI Agent Tool, Google Gemini ve Anthropic node'ları (mesaj, görsel/belge/ses/video analizi, görsel üretme), LLM zincirleri; OpenAI, Anthropic, Gemini, OpenRouter, Ollama ve diğer modeller; desteklenen her entegrasyonun AI tool olarak kullanımı.
+- **Servis trigger'ları:** Slack, Stripe, GitHub, GitLab, Shopify, Typeform, Jotform, HubSpot, Calendly, Cal.com, WooCommerce, Pipedrive, Jira, Webflow, ClickUp, Linear, Trello, Mailchimp, Gumroad, Facebook Lead Ads (webhook, imza doğrulamalı) ve Notion, Google Calendar, Airtable (polling). `InstallN8NWorkflow`'a `WebhookBaseURL` verilince GitHub, GitLab, Stripe, Typeform, Shopify, Calendly, Cal.com, WooCommerce, Pipedrive, ClickUp, Linear ve Gumroad webhook'ları serviste otomatik oluşturulur; diğerlerinde adres servisin ayarlarına elle girilir.
+- **Servis node'ları (tablo tabanlı REST connector'ları):** ClickUp, Salesforce, Zendesk, HighLevel, Hunter, Shopify, Stripe, QuickBooks, Pipedrive, Trello, Asana, monday.com, Mattermost, Linear, Todoist, SendGrid, Mailgun, DeepL, Google Translate, Clearbit, Jina AI, Mistral AI (OCR), AWS S3, SharePoint, Google Slides/Cloud Storage/BigQuery, Zoho CRM, Xero, Zoom, Mailchimp, Spotify; community: ScrapeGraphAI, Firecrawl, Decodo, SerpAPI, BrowserAct, Rapiwa, HTML/CSS to PDF, Upload to URL, Zvid, VerifiEmail, KlickTipp, Evolution API, Bright Data, Upload-Post, VLM Run, easybits, PostWire, Postiz, PDF.co, ElevenLabs, Snapshot Site, gotoHuman. Her biri AI tool olarak da kullanılabilir. Yeni bir servis `internal/n8n/rest_connector.go`'daki `restService` tablosuyla eklenir (örnek: `rest_clickup.go`).
+- **Diğer:** GraphQL, JWT, SSH (komut çalıştırma), Rename Keys, resmi MCP Client node'u, Wait (form gönderimiyle devam), Evaluation (değerlendirme çalıştırmaları dışında). Döngü dışındaki node'lara bağlanan Loop Over Items, n8n'deki gibi node node çalışır.
+- **RAG:** Vektör veritabanları (In-Memory, Qdrant, Pinecone, Supabase); OpenAI, Gemini, Mistral, Ollama, Cohere embedding'leri.
 
 Tam liste için [İngilizce dokümana](../n8n.md) bakın.
 
-**Desteklenmeyenler:** `crypto`/`util` dışındaki `require()` modülleri, eski binary .xls dosyaları, community node'lar.
+**Desteklenmeyenler:** `crypto`/`util` dışındaki `require()` modülleri, eski binary .xls dosyaları, Guardrails, FTP, yerleşik olmayan community node'lar. Galerinin tamamını indirip ölçmek için: `scripts/fetch-n8n-templates.sh /tmp/n8n-templates` ve ardından `N8N_CORPUS_DIR=/tmp/n8n-templates go test -tags n8ncorpus -run Corpus -v ./internal/n8n`.
 
 ## Güvenlik
 

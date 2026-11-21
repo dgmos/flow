@@ -21,6 +21,7 @@ require (
 	github.com/xuri/excelize/v2 v2.9.1
 	github.com/yuin/goldmark v1.7.13
 	go.mongodb.org/mongo-driver/v2 v2.8.2
+	golang.org/x/crypto v0.41.0
 )
 
 require (
@@ -51,7 +52,6 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect

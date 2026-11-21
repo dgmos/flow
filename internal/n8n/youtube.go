@@ -33,8 +33,15 @@ func youTubeNode(ec *execCtx) ([][]Item, error) {
 		return res, err
 	}
 	return eachItem(ec, func(i int, it Item) ([]Item, error) {
-		r, o := ec.resourceOp(i, "channel", "getAll")
-		if r != "video" || !youTubeVideoOps[o] {
+		r, o := ec.resourceOpBy(i, "channel", map[string]string{"channel": "getAll", "playlist": "getAll", "playlistItem": "add", "video": "getAll", "videoCategory": "getAll"})
+		if r != "video" {
+			op := youTubeOther.op(r, o)
+			if op == nil {
+				return nil, permanentError{fmt.Sprintf("YouTube: %s/%s is not supported", r, o)}
+			}
+			return youTubeOther.exec(ec, i, op, &restClient{base: base, headers: h})
+		}
+		if !youTubeVideoOps[o] {
 			return nil, permanentError{fmt.Sprintf("YouTube: %s/%s is not supported", r, o)}
 		}
 		switch o {
@@ -185,4 +192,72 @@ func youTubeTime(key, v string) string {
 		}
 	}
 	return v
+}
+
+// youTubeOther covers the channel, playlist, playlist item and video
+// category resources.
+var youTubeOther = &restService{
+	pager: cursorPager("nextPageToken", "pageToken"),
+	ops: map[string]*restOp{
+		"channel/get": {path: "/channels", query: "channelId:id", out: "items", build: youTubeParts(youTubeChannelParts)},
+		"channel/getAll": {path: "/channels", list: true, listKey: "items", sizeParam: "maxResults", maxSize: 50, query: "@options * @filters *",
+			build: youTubeMine(youTubeChannelParts, "categoryId", "forUsername", "id", "managedByMe")},
+		"playlist/get": {path: "/playlists", query: "playlistId:id @options *", out: "items", build: youTubeParts(youTubePlaylistParts)},
+		"playlist/getAll": {path: "/playlists", list: true, listKey: "items", sizeParam: "maxResults", maxSize: 50, query: "@options * @filters *",
+			build: youTubeMine(youTubePlaylistParts, "channelId", "id")},
+		"playlist/create": {method: "POST", path: "/playlists", query: "=part:snippet @options onBehalfOfContentOwner onBehalfOfContentOwnerChannel",
+			body: "title:snippet.title @options description:snippet.description tags:snippet.tags:csv privacyStatus:snippet.privacyStatus defaultLanguage:snippet.defaultLanguage"},
+		"playlist/update": {method: "PUT", path: "/playlists", query: "=part:snippet,status @updateFields onBehalfOfContentOwner",
+			body: "playlistId:id title:snippet.title @updateFields tags:snippet.tags:csv privacyStatus:status.privacyStatus description:snippet.description defaultLanguage:snippet.defaultLanguage"},
+		"playlist/delete":  {method: "DELETE", path: "/playlists", query: "playlistId:id @options onBehalfOfContentOwner", success: true},
+		"playlistItem/get": {path: "/playlistItems", query: "playlistItemId:id @options *", out: "items", build: youTubeParts(youTubePlaylistItemParts)},
+		"playlistItem/getAll": {path: "/playlistItems", list: true, listKey: "items", sizeParam: "maxResults", maxSize: 50, query: "playlistId @options *",
+			build: youTubeParts(youTubePlaylistItemParts)},
+		"playlistItem/add": {method: "POST", path: "/playlistItems", query: "=part:snippet,contentDetails @options onBehalfOfContentOwner",
+			body: "playlistId:snippet.playlistId videoId:snippet.resourceId.videoId =snippet.resourceId.kind:youtube#video @options position:snippet.position:int note:contentDetails.note startAt:contentDetails.startAt:iso endAt:contentDetails.endAt:iso"},
+		"playlistItem/delete":  {method: "DELETE", path: "/playlistItems", query: "playlistItemId:id @options onBehalfOfContentOwner", success: true},
+		"videoCategory/getAll": {path: "/videoCategories", list: true, listKey: "items", query: "regionCode =part:snippet"},
+	},
+}
+
+const (
+	youTubeChannelParts      = "brandingSettings,contentDetails,contentOwnerDetails,id,localizations,snippet,statistics,status,topicDetails"
+	youTubePlaylistParts     = "contentDetails,id,localizations,player,snippet,status"
+	youTubePlaylistItemParts = "contentDetails,id,snippet,status"
+)
+
+// youTubeParts sets "part" from the node's part list ("*" = all).
+func youTubeParts(all string) func(ec *execCtx, i int, r *restRequest) error {
+	return func(ec *execCtx, i int, r *restRequest) error {
+		v, _ := ec.param(i, "part", nil)
+		var ps []string
+		for _, p := range asListOrOne(v) {
+			if s := toString(p); s != "" {
+				ps = append(ps, s)
+			}
+		}
+		part := strings.Join(ps, ",")
+		if part == "" || strings.Contains(part, "*") {
+			part = all
+		}
+		r.query.Set("part", part)
+		return nil
+	}
+}
+
+// youTubeMine lists the user's own records unless a filter selects others.
+func youTubeMine(all string, filters ...string) func(ec *execCtx, i int, r *restRequest) error {
+	parts := youTubeParts(all)
+	return func(ec *execCtx, i int, r *restRequest) error {
+		if err := parts(ec, i, r); err != nil {
+			return err
+		}
+		for _, f := range filters {
+			if r.query.Get(f) != "" {
+				return nil
+			}
+		}
+		r.query.Set("mine", "true")
+		return nil
+	}
 }

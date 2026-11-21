@@ -2,7 +2,7 @@
 
 Flow can import and run [n8n](https://n8n.io) workflow exports. Every n8n node becomes a durable engine step, so imported workflows get flow's retries, leases, concurrency and persistence while keeping n8n's data model (items, paired items, expressions).
 
-Measured on the 299 most-viewed public n8n templates, **all 299 import and run**; 297 work fully (credentials still have to be provided) and 2 contain unfilled placeholders (such as `{{voice id}}`) that make that one node fail when it runs, exactly as in n8n. The importer reports such expressions as warnings and repairs unescaped quotes in node references (`$('Doesn't Exist')`). Execute Command, Python Code, STDIO MCP servers and the Local File Trigger need opt-in options (see Security). The importer reports exactly what is missing or needs configuration.
+Measured on the **entire public n8n template gallery (14,314 templates), 10,198 (71.2%) import and run**; the rest are reported with the exact nodes they miss (mostly integrations and community nodes not built in yet, see the benchmark below). On the 299 most-viewed templates, **all 299 import and run**; 297 work fully (credentials still have to be provided) and 2 contain unfilled placeholders (such as `{{voice id}}`) that make that one node fail when it runs, exactly as in n8n. The importer reports such expressions as warnings and repairs unescaped quotes in node references (`$('Doesn't Exist')`). Execute Command, Python Code, STDIO MCP servers and the Local File Trigger need opt-in options (see Security). The importer reports exactly what is missing or needs configuration.
 
 ## Quick start
 
@@ -72,35 +72,48 @@ Read results with `flow.N8NOutputItems(execution.Output)`.
 
 ## Supported nodes
 
-**Triggers:** Manual, Schedule, Cron, Interval, Webhook, Form, Chat, Execute Workflow Trigger, Error Trigger, Telegram, WhatsApp, Gmail (polling), Google Sheets (polling), Google Drive (polling), Email Trigger (IMAP; polled every minute instead of IDLE, UNSEEN/flag/date/header rules, marks messages read).
+**Triggers:** Manual, Schedule, service webhooks (see below), Notion / Google Calendar / Airtable (polling), Cron, Interval, Webhook, Form, Chat, Execute Workflow Trigger, Error Trigger, Evaluation Trigger (passes its input on; evaluation runs are not supported), Telegram, WhatsApp, Gmail (polling), Google Sheets (polling), Google Drive (polling), Email Trigger (IMAP; polled every minute instead of IDLE, UNSEEN/flag/date/header rules, marks messages read).
 
-**Flow & data:** IF, Switch, Filter, Merge (append, combine by fields / position / all, choose branch, v1 modes), Loop Over Items, Split In Batches v1/v2 (with `$node["X"].context.noItemsLeft`), Set / Edit Fields (v1–v3.4), Code (JavaScript, both modes), Function, Function Item, Split Out, Aggregate, Summarize, Limit, Sort, Remove Duplicates (incl. items seen in previous executions: keys, incremental, date; node/workflow scope), Item Lists, No Op, Wait (time, date, webhook), Stop and Error, Execute Workflow (database / inline JSON, once / each), Respond to Webhook (JSON, text, binary, redirect), Date & Time, XML, HTML (template, extract, table), HTML Extract, Markdown, Extract from File (PDF, CSV, XLSX, ODS, text, JSON, HTML, base64), Convert to File (CSV, XLSX, JSON, text, HTML, base64), Spreadsheet File (read CSV/XLSX/ODS, write CSV/XLSX), Compression (zip/gzip, size-limited), Read PDF, Crypto (hash, HMAC, generate), Execution Data, RSS Read, Edit Image (resize, information), Read/Write Files (sandboxed), Form (pages, completion).
+**Flow & data:** IF, Switch, Filter, Merge (append, combine by fields / position / all, choose branch, v1 modes), Loop Over Items, Split In Batches v1/v2 (with `$node["X"].context.noItemsLeft`), Set / Edit Fields (v1–v3.4), Code (JavaScript, both modes), Function, Function Item, Split Out, Aggregate, Summarize, Limit, Sort, Remove Duplicates (incl. items seen in previous executions: keys, incremental, date; node/workflow scope), Item Lists, No Op, Wait (time, date, webhook, form submission), Rename Keys (incl. regex), Evaluation (outside evaluation runs: "check if evaluating" takes the normal branch, metrics/outputs pass items on), Stop and Error, Execute Workflow (database / inline JSON, once / each), Respond to Webhook (JSON, text, binary, redirect), Date & Time, XML, HTML (template, extract, table), HTML Extract, Markdown, Extract from File (PDF, CSV, XLSX, ODS, text, JSON, HTML, base64), Convert to File (CSV, XLSX, JSON, text, HTML, base64), Spreadsheet File (read CSV/XLSX/ODS, write CSV/XLSX), Compression (zip/gzip, size-limited), Read PDF, Crypto (hash, HMAC, generate), Execution Data, RSS Read, Edit Image (resize, information), Read/Write Files (sandboxed), Form (pages, completion), GraphQL, JWT (sign/verify/decode; HS, RS, PS, ES), SSH (execute command; the host key is not verified, as in n8n).
 
-**Integrations:** HTTP Request (v1–v4, all auth types except Digest/OAuth1; pagination by parameter or next URL, completion by empty response, status codes or expression), Telegram, Gmail, YouTube (video search/get/update/upload/delete), GitHub, Hacker News, Reddit, Twilio (+ trigger), OpenWeatherMap, urlscan.io, APITemplate.io, uProc, WooCommerce, Microsoft OneDrive / Excel / Teams / Outlook trigger, Baserow, NocoDB, Odoo, Jira, Ghost, Dropbox, Google Tasks, Google Analytics (GA4), S3 (any S3-compatible endpoint, SigV4), MongoDB, Google Sheets, Google Drive (v3, and v1/v2 upload/download/copy/delete/share/folder create), Google Calendar, Google Docs, Slack, Discord, WhatsApp, Notion, Airtable, WordPress, X (Twitter), LinkedIn, Microsoft Outlook, Facebook Graph API, Postgres, MySQL (execute query), Redis, Supabase, Send Email (SMTP), OpenAI (legacy and LangChain node).
+**Integrations:** HTTP Request (v1–v4, all auth types except Digest/OAuth1; pagination by parameter or next URL, completion by empty response, status codes or expression), Telegram, Gmail, YouTube (videos, channels, playlists, playlist items, video categories), HubSpot (contacts, companies, deals, engagements, tickets, contact lists, owners; API key, private app token or OAuth2), Perplexity, Data Table (n8n's built-in tables, see `DataTables`), GitHub, Hacker News, Reddit, Twilio (+ trigger), OpenWeatherMap, urlscan.io, APITemplate.io, uProc, WooCommerce, Microsoft OneDrive / Excel / Teams / Outlook trigger, Baserow, NocoDB, Odoo, Jira, Ghost, Dropbox, Google Tasks, Google Analytics (GA4), S3 and AWS S3 (any S3-compatible endpoint, SigV4), MongoDB, Google Sheets, Google Drive (v3, and v1/v2 upload/download/copy/delete/share/folder create), Google Calendar, Google Docs, Slack, Discord, WhatsApp, Notion, Airtable, WordPress, X (Twitter), LinkedIn, Microsoft Outlook, Facebook Graph API, Postgres, MySQL (execute query), Redis, Supabase, Send Email (SMTP), OpenAI (legacy and LangChain node).
 
-**AI:** AI Agent (tools, memory, output parsers), Basic LLM Chain, Question and Answer Chain, Summarization Chain, Text Classifier, Information Extractor, Sentiment Analysis, OpenAI. Chat models: OpenAI, Anthropic, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI, Ollama. Memory: window buffer (Postgres/Redis/Mongo/… chat memories map to the configured chat memory store). Output parsers: structured, auto-fixing, item list. Tools: Call Workflow, HTTP Request, Code, Calculator, Think, Wikipedia, SerpAPI, vector store tools, and **any supported integration as a tool** (`gmailTool`, `googleSheetsTool`, `telegramTool`, … with `$fromAI()`).
+**Service nodes (table-driven REST connectors):** ClickUp, Salesforce (incl. SOQL search, custom objects, JWT auth), Zendesk, HighLevel (v1 and v2 APIs), Hunter, Shopify, Stripe, QuickBooks (incl. invoice PDFs), Pipedrive (node v1 and v2), Trello, Asana, monday.com (v1), Mattermost, Linear, Todoist, SendGrid, Mailgun, DeepL, Google Translate, Clearbit, Jina AI, Mistral AI (document OCR), Microsoft SharePoint, Google Slides, Google Cloud Storage, Google BigQuery, Zoho CRM, Xero, Zoom, Mailchimp, Spotify. Each also works as an AI tool (`clickUpTool`, …). Operations a node does not implement are reported at import.
 
-**RAG:** Default Data Loader (JSON, PDF, text, CSV), recursive / token / character text splitters, OpenAI / Gemini / Mistral / Ollama embeddings, vector stores In-Memory, Qdrant, Pinecone and Supabase (insert, load, retrieve, retrieve-as-tool). Data is stored in LangChain's layout, so collections created by n8n remain readable.
+**AI:** AI Agent (tools, memory, output parsers), AI Agent Tool (an agent with its own model, tools and memory used as another agent's tool), Google Gemini (message with tools and Google Search, analyze image/document/audio/video incl. YouTube URLs, transcribe, generate/edit images, Veo video, file upload), Anthropic (message with tools and web search, analyze image/document, Files API), Basic LLM Chain, Question and Answer Chain, Summarization Chain, Text Classifier, Information Extractor, Sentiment Analysis, OpenAI. Chat models: OpenAI, Anthropic, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI, Ollama. Memory: window buffer (Postgres/Redis/Mongo/… chat memories map to the configured chat memory store). Output parsers: structured, auto-fixing, item list. Tools: Call Workflow, HTTP Request, Code, Calculator, Think, Wikipedia, SerpAPI, vector store tools, and **any supported integration as a tool** (`gmailTool`, `googleSheetsTool`, `telegramTool`, … with `$fromAI()`).
+
+**RAG:** Default Data Loader (JSON, PDF, text, CSV), recursive / token / character text splitters, OpenAI / Gemini / Mistral / Ollama / Cohere embeddings, vector stores In-Memory, Qdrant, Pinecone and Supabase (insert, load, retrieve, retrieve-as-tool). Data is stored in LangChain's layout, so collections created by n8n remain readable.
 
 **Expressions:** `{{ }}` templates evaluated with a sandboxed JavaScript engine (goja): `$json`, `$input`, `$('Node')` with paired-item tracing, `$node`, `$items`, `$now`, `$today`, `DateTime` (Luxon-compatible), `$workflow`, `$execution` (incl. `resumeUrl`), `$prevNode`, `$vars`, `$env` (opt-in), `$if`, `$ifEmpty`, `$fromAI`, n8n's string/array/number/object helpers (`.first()`, `.toJsonString()`, `.extractDomain()`, `.toDateTime()`, …) and `Buffer`.
 
-Loops: Loop Over Items (v3) and any other cycle (e.g. polling: IF → Wait → HTTP → IF) run as one step; nodes inside are not recorded as separate steps.
+Loops: Loop Over Items (v3) and any other cycle (e.g. polling: IF → Wait → HTTP → IF) run as one step; nodes inside are not recorded as separate steps. A Loop Over Items whose body is also wired to nodes outside the loop runs node by node like n8n (the report notes it).
 
 Waits longer than 65 seconds do not hold a worker: the step is stored as waiting and resumed by the engine (checked every 30 seconds, survives restarts). "Continue on error" settings keep successful items and turn each failing item into an error item, like n8n.
 
+## Adding a service
+
+Most service nodes are a `restService` table (`internal/n8n/rest_connector.go`): per `resource/operation` an HTTP method and path, query and body field lists that map node parameters to API fields (with conversions such as dates to milliseconds or comma lists to arrays), the list key and a pager (page number, offset, cursor, next URL, `Link` header). Hooks cover the rest (`build`, `post`, `run`). Registering a table makes the node type supported, its `…Tool` variant usable by agents and unknown operations blocked at import. `rest_clickup.go` is a complete example.
+
+## Service triggers
+
+Slack, Stripe, GitHub, GitLab, Shopify, Typeform, Jotform, HubSpot, Calendly, Cal.com, WooCommerce, Pipedrive, Jira, Webflow, ClickUp, Linear, Trello, Mailchimp, Gumroad and Facebook Lead Ads triggers receive the service's events at `/webhook/{webhookId}` and behave like n8n's: signatures are verified (Slack, Stripe, GitHub, Typeform, Shopify, Calendly, Linear, Webflow v2, Trello, Cal.com, …), handshakes are answered (Slack `url_verification`, Facebook `hub.challenge`, Trello/Mailchimp validation), events are filtered by the node's settings and the items have n8n's shape (e.g. Typeform's simplified answers, Slack's `event`, GitHub's `{body, headers, query}`).
+
+Pass `WebhookBaseURL` (the public URL `N8NHandler` is mounted at) to `InstallN8NWorkflow` to create the webhooks in the services, as n8n does on activation: GitHub, GitLab, Stripe, Typeform, Shopify, Calendly, Cal.com, WooCommerce, Pipedrive, ClickUp, Linear and Gumroad. Their ids and signing secrets are kept in `PollState`; `UnregisterN8NWebhooks` deletes them. Slack, Jotform, HubSpot, Jira, Webflow, Trello, Mailchimp and Facebook Lead Ads are listed in the result as `Manual`: enter the URL in the service's webhook settings. GitHub deliveries are only accepted with the secret created at registration.
+
 ## Community nodes
 
-Tavily, ScrapeNinja, InfraNodus, Blotato and YouTube Transcript are built in; `{placeholder}` values in community AI tools become tool arguments. Other community nodes are reported at import.
+Apify (run actors and tasks, datasets, runs, key-value stores), ScrapeGraphAI (API v1 and v2), Firecrawl, Decodo, SerpAPI, BrowserAct, Rapiwa, HTML/CSS to PDF, Upload to URL, Zvid, VerifiEmail, KlickTipp, Evolution API, Bright Data, Upload-Post, VLM Run, easybits Extractor, PostWire, Postiz, PDF.co, ElevenLabs, Snapshot Site, gotoHuman (sending reviews; waiting for the review is not supported), Tavily, ScrapeNinja, InfraNodus, Blotato and YouTube Transcript are built in; `{placeholder}` values in community AI tools become tool arguments. Other community nodes are reported at import.
 
 ## MCP
 
 - **MCP Server Trigger**: the tools connected to the trigger are served at `/mcp/{path}` (Streamable HTTP) and `/mcp/{path}/sse` + `/mcp/{path}/messages` (SSE). Each `tools/call` runs as an execution of the workflow. Bearer and header authentication are supported.
+- **MCP Client** node: calls one tool of a remote server per item (HTTP Streamable or SSE; bearer, header or OAuth2 token).
 - **MCP Client Tool**: lists a remote server's tools (HTTP Streamable or SSE) and gives them to the agent; connections follow the outbound policy.
 - **Community MCP Client** (`n8n-nodes-mcp`): SSE and HTTP connections work; STDIO servers start a local process and run only with `Options.AllowLocalProcesses`.
 
 ## Not supported
 
-`require()` of other modules, `this.helpers` methods other than httpRequest/request/prepareBinaryData/getBinaryDataBuffer/returnJsonArray, legacy binary .xls files, writing ODS/XLS, Google Drive v1/v2 list operations, sub-node memory managers and community nodes. The report lists them as blocking issues.
+`require()` of other modules, `this.helpers` methods other than httpRequest/request/prepareBinaryData/getBinaryDataBuffer/returnJsonArray, legacy binary .xls files, writing ODS/XLS, Google Drive v1/v2 list operations, sub-node memory managers, Guardrails, FTP and community nodes not listed above. The report lists them as blocking issues.
 
 ## Security
 
@@ -135,16 +148,18 @@ OAuth2 credentials (Google, Slack, Microsoft, X, LinkedIn, …) must return a va
 |---|---|---|
 | `ChatMemory` | process memory | AI chat history store |
 | `PollState` | process memory | Polling-trigger cursors and dedupe history |
+| `DataTables` | process memory | n8n Data Tables (`N8NDataTableStore`, `NewN8NMemoryDataTables`) |
 | `WorkflowResolver` | IDs as-is | Map n8n workflow IDs (Execute Workflow, tools) to flow IDs |
 | `Timezone` | host zone | Default zone for `$now` / `DateTime` when the workflow has none |
 | `APIBaseURLs` | official APIs | Route integrations through a proxy |
 
-Provide durable `ChatMemory` and `PollState` implementations when running several instances. If your `PollState` also implements `N8NPollStateSwapper` (`CompareAndSwapPollState`), cursors advance atomically and overlapping polls never emit the same items twice; otherwise polls are only serialized within one process.
+Provide durable `ChatMemory`, `PollState` and `DataTables` implementations when running several instances. Templates reference data tables of their author's n8n instance, so a Data Table node looks a table up by ID, then by name, and otherwise creates it (empty, with columns added as rows are written). If your `PollState` also implements `N8NPollStateSwapper` (`CompareAndSwapPollState`), cursors advance atomically and overlapping polls never emit the same items twice; otherwise polls are only serialized within one process.
 
 ## Measuring compatibility
 
 ```bash
-N8N_CORPUS_DIR=/path/to/templates go test -tags n8ncorpus -run Corpus -v ./internal/n8n
+scripts/fetch-n8n-templates.sh /tmp/n8n-templates   # the whole public gallery (re-runs fetch only new ones)
+N8N_CORPUS_DIR=/tmp/n8n-templates go test -tags n8ncorpus -run Corpus -v ./internal/n8n
 ```
 
-The benchmark imports every JSON file in the directory, checks that runnable workflows register and start, and ranks the remaining blockers by how many templates each would unlock.
+The benchmark imports every JSON file in the directory, checks that runnable workflows register and start, and ranks the remaining blockers by how many templates each would unlock, with the cumulative share after each (`N8N_CORPUS_GREEDY=60` for a longer list). It also groups blocked templates by what they wait for: a service node, a service trigger, an AI node, a community node or an engine feature.

@@ -324,6 +324,25 @@ func TestN8NHumanInTheLoop(t *testing.T) {
 		t.Fatalf("form completion: %d %s", code, body)
 	}
 
+	// 2b) Wait node resumed by a form submission.
+	install(t, eng, "survey", n8nWorkflow([]map[string]interface{}{
+		{"name": "Form", "type": "n8n-nodes-base.formTrigger", "typeVersion": 2.2},
+		{"name": "More", "type": "n8n-nodes-base.wait", "typeVersion": 1.1, "parameters": map[string]interface{}{"resume": "form", "formTitle": "One more thing",
+			"formFields": map[string]interface{}{"values": []interface{}{map[string]interface{}{"fieldLabel": "Role"}}}}},
+		{"name": "Done", "type": "n8n-nodes-base.form", "typeVersion": 1, "parameters": map[string]interface{}{"operation": "completion", "completionTitle": "=Bye {{ $json.Role }}"}},
+	}, map[string]interface{}{"Form": link("More"), "More": link("Done")}))
+	req, _ = http.NewRequest("POST", srv.URL+"/n8n/form/survey", strings.NewReader(`{"name":"Ada"}`))
+	code, body = do(t, req)
+	page.ResumeURL = ""
+	_ = json.Unmarshal([]byte(body), &page)
+	if code != 200 || page.ResumeURL == "" || !strings.Contains(body, "One more thing") || !strings.Contains(body, "Role") {
+		t.Fatalf("wait form page: %d %s", code, body)
+	}
+	req, _ = http.NewRequest("POST", page.ResumeURL, strings.NewReader(`{"Role":"CTO"}`))
+	if code, body = do(t, req); code != 200 || !strings.Contains(body, `"title":"Bye CTO"`) {
+		t.Fatalf("wait form completion: %d %s", code, body)
+	}
+
 	// 3) Wait for webhook via $execution.resumeUrl.
 	install(t, eng, "callback", n8nWorkflow([]map[string]interface{}{
 		{"name": "Start", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1},

@@ -1,6 +1,7 @@
 package n8n
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -181,5 +182,21 @@ func TestSummarizeDocumentLoaderAndQdrantUpdate(t *testing.T) {
 	body, _ := seen.Load("PUT /collections/kb/points")
 	if !strings.Contains(toString(body), `"id":42`) || !strings.Contains(toString(body), "Refunds are processed") {
 		t.Fatalf("qdrant update: %v", body)
+	}
+}
+
+func TestCohereEmbedder(t *testing.T) {
+	f := newFakeAPI(t, func(r recorded) (int, string, interface{}) {
+		return 200, "application/json", map[string]interface{}{"embeddings": map[string]interface{}{"float": []interface{}{[]interface{}{1, 0}, []interface{}{0, 1}}}}
+	})
+	ec := &execCtx{ctx: context.Background(), opts: &Options{Outbound: node.OutboundPolicy{AllowedHosts: []string{"127.0.0.1"}}}}
+	e := &cohereEmbedder{ec: ec, baseURL: f.srv.URL, apiKey: "ck", model: "embed-english-v3.0"}
+	out, err := e.embed(context.Background(), []string{"a", "b"})
+	if err != nil || len(out) != 2 || out[1][1] != 1 {
+		t.Fatalf("embed: %v %v", out, err)
+	}
+	r := f.find(t, "POST", "/v2/embed")
+	if r.auth != "Bearer ck" || !strings.Contains(r.body, `"input_type":"search_document"`) || !strings.Contains(r.body, `"texts":["a","b"]`) {
+		t.Fatalf("request %+v", r)
 	}
 }

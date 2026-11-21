@@ -61,6 +61,9 @@ type Options struct {
 	AllowLocalProcesses bool
 	// PythonPath is the interpreter for Python Code nodes (default python3).
 	PythonPath string
+	// DataTables stores n8n Data Tables. Nil uses a process-local in-memory
+	// store; provide a durable one for production.
+	DataTables DataTableStore
 }
 
 func (o *Options) exprTimeout() time.Duration {
@@ -522,7 +525,7 @@ func cloneParams(p map[string]interface{}) map[string]interface{} {
 // perItemErrorTypes are nodes that process items independently, so with
 // "continue on error" each item can succeed or fail on its own.
 var perItemErrorTypes = map[string]bool{
-	"httpRequest": true, "set": true, "telegram": true, "gmail": true, "googleDrive": true, "googleCalendar": true,
+	"httpRequest": true, "set": true, "dataTable": true, "telegram": true, "gmail": true, "googleDrive": true, "googleCalendar": true,
 	"googleDocs": true, "slack": true, "discord": true, "whatsApp": true, "notion": true, "airtable": true,
 	"wordpress": true, "twitter": true, "linkedIn": true, "microsoftOutlook": true, "facebookGraphApi": true,
 	"supabase": true, "redis": true, "postgres": true, "mySql": true, "openAi": true, "agent": true,

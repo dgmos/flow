@@ -181,9 +181,13 @@ var triggerKinds = map[string]string{
 	"n8n-nodes-base.localFileTrigger":            "poll",
 	"@n8n/n8n-nodes-langchain.mcpTrigger":        "mcp",
 	"n8n-nodes-base.twilioTrigger":               "webhook",
+	"n8n-nodes-base.notionTrigger":               "poll",
+	"n8n-nodes-base.googleCalendarTrigger":       "poll",
+	"n8n-nodes-base.airtableTrigger":             "poll",
+	"n8n-nodes-base.evaluationTrigger":           "evaluation",
 }
 
-var defaultTriggerRank = map[string]int{"manual": 0, "chat": 1, "webhook": 2, "form": 3, "schedule": 4, "poll": 5, "external": 6, "subworkflow": 7, "mcp": 8}
+var defaultTriggerRank = map[string]int{"manual": 0, "chat": 1, "webhook": 2, "form": 3, "schedule": 4, "poll": 5, "external": 6, "subworkflow": 7, "mcp": 8, "evaluation": 9}
 
 func isTriggerType(t string) bool {
 	if _, ok := triggerKinds[t]; ok {
@@ -246,6 +250,11 @@ func Import(data []byte, opts ImportOptions) (*models.Workflow, *Report, error) 
 						continue
 					}
 					if connType != "main" {
+						if _, root := extraNodeTypes(&Options{})[src.Type]; (root || nodeTypes()[src.Type] != nil) && !aiSubNodeSupported(src.Type) && !vectorStoreTypes[short(src.Type)] {
+							// e.g. Agent -> Chat Model: the connection is drawn the wrong way.
+							rep.block(src, "%s connection to %q starts at %s, which is not a sub-node", connType, dst.Name, src.Type)
+							continue
+						}
 						if aiLinks[dst.Name] == nil {
 							aiLinks[dst.Name] = map[string][]string{}
 						}
@@ -526,6 +535,9 @@ func checkNode(n *rawNode, typ string, params map[string]interface{}, rep *Repor
 		}
 		return cur
 	}
+	if restServices[strings.TrimSuffix(typ, "Tool")] != nil {
+		checkResourceOps(n, typ, get, rep)
+	}
 	switch short(typ) {
 	case "httpRequest":
 		if get("options.proxy") != nil {
@@ -561,7 +573,7 @@ func checkNode(n *rawNode, typ string, params map[string]interface{}, rep *Repor
 		}
 	case "wait":
 		if r := toString(get("resume")); r == "form" {
-			rep.block(n, "wait for form submission is not supported")
+			rep.warn(n, "form pages need Options.ResumeBaseURL/ResumeSecret; the /form endpoint returns the next page definition")
 		} else if r == "webhook" {
 			rep.warn(n, "resume via webhook maps to engine signals (SignalExecution)")
 		}
@@ -589,16 +601,24 @@ func checkNode(n *rawNode, typ string, params map[string]interface{}, rep *Repor
 		if toBool(get("waitUserReply")) {
 			rep.block(n, "Respond to Chat waiting for the user's reply is not supported")
 		}
+	case "evaluationTrigger":
+		rep.warn(n, "evaluation runs (dataset rows, metrics) are not supported; started directly, the Evaluation Trigger passes its input on")
 	case "youTube":
 		r, o := toString(get("resource")), toString(get("operation"))
-		if o == "" {
-			o = "getAll"
+		if r == "" {
+			r = "channel"
 		}
-		if r != "video" || !youTubeVideoOps[o] {
-			if r == "" {
-				r = "channel"
+		if o == "" {
+			o = map[string]string{"playlistItem": "add"}[r]
+			if o == "" {
+				o = "getAll"
 			}
-			rep.block(n, "YouTube %s/%s is not supported (video getAll/get/update/upload/delete are)", r, o)
+		}
+		if strings.HasPrefix(r, "=") || strings.HasPrefix(o, "=") {
+			break
+		}
+		if (r != "video" || !youTubeVideoOps[o]) && youTubeOther.op(r, o) == nil {
+			rep.block(n, "YouTube %s/%s is not supported", r, o)
 		}
 	case "googleDrive":
 		if n.TypeVersion < 3 {
@@ -642,6 +662,11 @@ func checkNode(n *rawNode, typ string, params map[string]interface{}, rep *Repor
 		if op := toString(get("operation")); op == "sendAndWait" {
 			checkSendAndWait(n, get, rep)
 		}
+	case "dataTable":
+		rep.warn(n, "data tables use Options.DataTables (process memory by default); a table that does not exist yet is created on first use")
+		checkResourceOps(n, typ, get, rep)
+	case "hubspot", "googleGemini", "anthropic", "perplexity", "apify", "ssh":
+		checkResourceOps(n, typ, get, rep)
 	case "form":
 		if op := toString(get("operation")); op == "" || op == "page" {
 			rep.warn(n, "form pages need Options.ResumeBaseURL/ResumeSecret; the /form endpoint returns the next page definition")
@@ -726,11 +751,28 @@ func triggerSpec(n *rawNode, rep *Report) TriggerSpec {
 	kind, ok := triggerKinds[n.Type]
 	if !ok {
 		kind = "external"
+		if serviceHooks[n.Type].handle != nil {
+			kind = "webhook"
+		}
 	}
 	ts := TriggerSpec{Node: n.Name, Type: n.Type, Kind: kind}
 	p := n.Parameters
 	switch kind {
 	case "webhook":
+		if serviceHooks[n.Type].handle != nil {
+			ts.Path = n.WebhookID
+			if ts.Path == "" {
+				ts.Path = n.ID
+			}
+			ts.Method = "POST"
+			ts.ResponseMode = "onReceived"
+			if _, auto := hookRegistrars[n.Type]; auto {
+				rep.warn(n, "events arrive at <handler base URL>/webhook/%s; set N8NInstallOptions.WebhookBaseURL to create the webhook in the service (it also stores the signing secret)", ts.Path)
+			} else {
+				rep.warn(n, "events arrive at <handler base URL>/webhook/%s; enter this URL in the service's webhook settings", ts.Path)
+			}
+			break
+		}
 		if rawBodyTriggers[n.Type] {
 			ts.Path = n.WebhookID
 			if ts.Path == "" {
@@ -991,4 +1033,82 @@ func repairNodeReferences(nodes []*rawNode) {
 	for _, n := range nodes {
 		walk(n.Parameters)
 	}
+}
+
+// resourceOps lists the supported resource/operation pairs of nodes that
+// implement only part of n8n's operations, with n8n's defaults.
+var resourceOps = map[string]struct {
+	defResource string
+	defOps      map[string]string
+	ops         map[string]string // resource -> operations, space-separated ("|" for Apify)
+}{
+	"dataTable": {"row", map[string]string{"row": "insert", "table": "list"}, map[string]string{
+		"row":   "insert get getAll append deleteRows delete update upsert rowExists rowNotExists",
+		"table": "list create clear update delete"}},
+	"hubspot": {"contact", map[string]string{"contact": "upsert", "company": "create", "deal": "create", "engagement": "create", "ticket": "create", "contactList": "add", "owner": "getAll"}, map[string]string{
+		"contact":     "upsert get getAll getRecentlyCreatedUpdated delete search",
+		"company":     "create update get getAll getRecentlyCreatedUpdated getRecentlyModified getRecentlyCreated searchByDomain delete search",
+		"deal":        "create update get getAll getRecentlyCreatedUpdated getRecentlyCreated getRecentlyModified delete search",
+		"engagement":  "create get getAll delete",
+		"ticket":      "create update get getAll delete",
+		"contactList": "add remove",
+		"owner":       "getAll"}},
+	"googleGemini": {"text", map[string]string{"text": "message", "image": "analyze", "video": "analyze", "audio": "transcribe", "document": "analyze", "file": "upload"}, map[string]string{
+		"text": "message", "image": "analyze generate edit", "video": "analyze generate download", "audio": "analyze transcribe", "document": "analyze", "file": "upload"}},
+	"anthropic": {"text", map[string]string{"text": "message", "image": "analyze", "document": "analyze", "file": "upload"}, map[string]string{
+		"text": "message", "image": "analyze", "document": "analyze", "file": "upload get list delete deleteFile"}},
+	"perplexity": {"chat", map[string]string{"chat": "complete"}, map[string]string{"chat": "complete"}},
+	"ssh":        {"command", map[string]string{"command": "execute", "file": "upload"}, map[string]string{"command": "execute"}},
+	"apify": {"Actors", map[string]string{"Actors": "Run actor", "Actor tasks": "Run task", "Actor runs": "Get user runs list", "Datasets": "Get items", "Key-Value Stores": "Get Key-Value Store Record",
+		"actor": "run", "dataset": "getItems"}, map[string]string{
+		"Actors":           "Run actor|Run actor and get dataset|Scrape single URL|Get last run|Get list of actors",
+		"Actor tasks":      "Run task|Run task and get dataset|Get list of tasks",
+		"Actor runs":       "Get run|Get runs|Get user runs list|Abort run",
+		"Datasets":         "Get items",
+		"Key-Value Stores": "Get Key-Value Store Record",
+		"actor":            "run", "dataset": "getItems"}},
+}
+
+func checkResourceOps(n *rawNode, typ string, get func(string) interface{}, rep *Report) {
+	if rs := restServices[strings.TrimSuffix(typ, "Tool")]; rs != nil {
+		r, o := toString(get("resource")), toString(get("operation"))
+		if r == "" {
+			r = rs.defResource
+		}
+		if o == "" {
+			o = rs.defOps[r]
+		}
+		if strings.HasPrefix(r, "=") || strings.HasPrefix(o, "=") || rs.supports(r, o) {
+			return
+		}
+		rep.block(n, "%s %s/%s is not supported", n.Type[strings.LastIndex(n.Type, ".")+1:], r, o)
+		return
+	}
+	spec, ok := resourceOps[short(typ)]
+	if !ok {
+		return
+	}
+	r, o := toString(get("resource")), toString(get("operation"))
+	if r == "" {
+		r = spec.defResource
+	}
+	if o == "" {
+		o = spec.defOps[r]
+	}
+	if strings.HasPrefix(r, "=") || strings.HasPrefix(o, "=") {
+		return // decided at run time
+	}
+	list, ok := spec.ops[r]
+	sep := " "
+	if spec.defResource == "Actors" {
+		sep = "|" // Apify's operation names contain spaces
+	}
+	if ok {
+		for _, x := range strings.Split(list, sep) {
+			if x == o {
+				return
+			}
+		}
+	}
+	rep.block(n, "%s %s/%s is not supported", n.Type[strings.LastIndex(n.Type, ".")+1:], r, o)
 }

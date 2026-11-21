@@ -48,7 +48,16 @@ type (
 	// N8NPollStateSwapper is an optional extension of N8NPollStateStore that
 	// advances cursors atomically so overlapping polls never emit duplicates.
 	N8NPollStateSwapper = n8n.PollStateSwapper
+	// N8NDataTableStore persists n8n Data Tables (N8NOptions.DataTables).
+	N8NDataTableStore = n8n.DataTableStore
+	// N8NDataTable is one n8n Data Table with its columns and rows.
+	N8NDataTable = n8n.DataTable
+	// N8NDataTableColumn is a typed Data Table column.
+	N8NDataTableColumn = n8n.DataTableColumn
 )
+
+// NewN8NMemoryDataTables returns a process-local N8NDataTableStore.
+func NewN8NMemoryDataTables() *n8n.MemoryDataTables { return n8n.NewMemoryDataTables() }
 
 // NewN8NStaticCredentials returns an empty in-memory credential store.
 func NewN8NStaticCredentials() *N8NStaticCredentials { return n8n.NewStaticCredentials() }
@@ -82,6 +91,11 @@ type N8NInstallOptions struct {
 	AllowPartial bool
 	// SkipSchedules does not create schedules for Schedule Trigger nodes.
 	SkipSchedules bool
+	// WebhookBaseURL is the public URL N8NHandler is mounted at (e.g.
+	// "https://hooks.example.com/n8n"). When set, service triggers (GitHub,
+	// Stripe, Typeform, Shopify, …) create their webhooks in the service,
+	// as n8n does on activation; see Webhooks in the result.
+	WebhookBaseURL string
 }
 
 // N8NInstallResult is returned by InstallN8NWorkflow.
@@ -89,6 +103,32 @@ type N8NInstallResult struct {
 	Workflow    *Workflow
 	Report      *N8NReport
 	ScheduleIDs []string
+	// Webhooks lists the service triggers' webhook URLs and whether they
+	// were registered (Manual: enter the URL in the service yourself).
+	Webhooks []N8NWebhookRegistration
+}
+
+// N8NWebhookRegistration is the webhook of one service trigger.
+type N8NWebhookRegistration = n8n.WebhookRegistration
+
+// RegisterN8NWebhooks creates the webhooks of an installed workflow's
+// service triggers in their services (see N8NInstallOptions.WebhookBaseURL).
+func (e *Engine) RegisterN8NWebhooks(ctx context.Context, namespace, workflowID, baseURL string) ([]N8NWebhookRegistration, error) {
+	wf, err := e.WorkflowDefinition(ctx, namespace, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	return n8n.RegisterWebhooks(ctx, e.n8nOpts, namespace, wf, baseURL), nil
+}
+
+// UnregisterN8NWebhooks deletes the webhooks RegisterN8NWebhooks created;
+// call it before removing the workflow.
+func (e *Engine) UnregisterN8NWebhooks(ctx context.Context, namespace, workflowID string) error {
+	wf, err := e.WorkflowDefinition(ctx, namespace, workflowID)
+	if err != nil {
+		return err
+	}
+	return n8n.UnregisterWebhooks(ctx, e.n8nOpts, namespace, wf)
 }
 
 // ErrN8NNotRunnable is returned by InstallN8NWorkflow when the workflow
@@ -115,6 +155,9 @@ func (e *Engine) InstallN8NWorkflow(ctx context.Context, namespace string, data 
 	}
 	if err := e.RegisterWorkflow(ctx, namespace, wf); err != nil {
 		return res, err
+	}
+	if opts.WebhookBaseURL != "" {
+		res.Webhooks = n8n.RegisterWebhooks(ctx, e.n8nOpts, namespace, wf, opts.WebhookBaseURL)
 	}
 	if opts.SkipSchedules || e.CronManager == nil {
 		return res, nil
