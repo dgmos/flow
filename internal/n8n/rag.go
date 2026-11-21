@@ -174,7 +174,39 @@ func (ec *execCtx) buildEmbedder(cfg map[string]interface{}, i int) (embedder, e
 		}
 		return &geminiEmbedder{ec: ec, baseURL: credBaseURL(c, "https://generativelanguage.googleapis.com"), apiKey: credString(c, "apiKey"), model: firstNonEmpty(toString(p["modelName"]), "models/text-embedding-004")}, nil
 	}
+	if st == "embeddingsCohere" {
+		c, err := ec.subCredential(s, "cohereApi")
+		if err != nil {
+			return nil, err
+		}
+		return &cohereEmbedder{ec: ec, baseURL: credBaseURL(c, "https://api.cohere.com"), apiKey: credString(c, "apiKey"), model: firstNonEmpty(toString(p["modelName"]), "embed-english-v2.0")}, nil
+	}
 	return nil, permanentError{fmt.Sprintf("embeddings model %s is not supported", s.typ)}
+}
+
+// cohereEmbedder calls Cohere's embed API. Texts are embedded as
+// documents (input_type search_document), queries included.
+type cohereEmbedder struct {
+	ec      *execCtx
+	baseURL string
+	apiKey  string
+	model   string
+}
+
+func (e *cohereEmbedder) embed(_ context.Context, texts []string) ([][]float64, error) {
+	var out [][]float64
+	for start := 0; start < len(texts); start += 96 {
+		end := min(start+96, len(texts))
+		body := map[string]interface{}{"model": e.model, "texts": texts[start:end], "input_type": "search_document", "embedding_types": []string{"float"}}
+		res, _, err := e.ec.apiCall("POST", e.baseURL+"/v2/embed", map[string]string{"Authorization": "Bearer " + e.apiKey}, body, "")
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range asList(asMap(res["embeddings"])["float"]) {
+			out = append(out, floats(v))
+		}
+	}
+	return out, checkEmbeddings(out, len(texts))
 }
 
 // ---------------------------------------------------------------- splitting & loading
@@ -912,7 +944,7 @@ func ragSubNodeSupported(typ string) bool {
 		return true
 	}
 	switch s {
-	case "embeddingsGoogleGemini", "documentDefaultDataLoader", "documentBinaryInputLoader",
+	case "embeddingsGoogleGemini", "embeddingsCohere", "documentDefaultDataLoader", "documentBinaryInputLoader",
 		"textSplitterRecursiveCharacterTextSplitter", "textSplitterTokenSplitter", "textSplitterCharacterTextSplitter",
 		"retrieverVectorStore", "toolVectorStore", "rerankerCohere":
 		return true

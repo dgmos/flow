@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -759,4 +760,105 @@ func (ec *execCtx) mcpConfigCommunity(i int) (mcpConfig, error) {
 		return cfg, permanentError{"MCP Client: server URL is empty"}
 	}
 	return cfg, nil
+}
+
+// mcpClientNode is the official MCP Client node: it calls one tool of an
+// MCP server per item.
+func mcpClientNode(ec *execCtx) ([][]Item, error) {
+	s := subNode{typ: ec.node.Type, config: ec.node.Config}
+	p := ec.params
+	if toString(p["serverTransport"]) == "" {
+		p = cloneJSON(p)
+		p["serverTransport"] = "httpStreamable"
+	}
+	cfg, err := ec.mcpConfigOfficial(s, p)
+	if err != nil {
+		return nil, err
+	}
+	if toString(p["authentication"]) == "mcpOAuth2Api" {
+		c, err := ec.credential("mcpOAuth2Api")
+		if err != nil {
+			return nil, err
+		}
+		cfg.headers["Authorization"] = "Bearer " + accessToken(c)
+	}
+	mode, _ := ec.str(0, "inputMode", "manual")
+	var out []Item
+	err = ec.withMCP(cfg, func(ctx context.Context, t mcpTransport) error {
+		for i := range ec.items() {
+			tool, err := ec.rlString(i, "tool")
+			if err != nil {
+				return err
+			}
+			var args map[string]interface{}
+			if mode == "json" {
+				v, _ := ec.param(i, "jsonInput", "{}")
+				if args, err = jsonObjectParam(v); err != nil {
+					return permanentError{"MCP Client: JSON input: " + err.Error()}
+				}
+			} else {
+				v, _ := ec.param(i, "parameters.value", nil)
+				args = asMap(v)
+			}
+			if args == nil {
+				args = map[string]interface{}{}
+			}
+			raw, err := t.call(ctx, "tools/call", map[string]interface{}{"name": tool, "arguments": args})
+			if err != nil {
+				return fmt.Errorf("item %d: %w", i, err)
+			}
+			var res struct {
+				Content           []map[string]interface{} `json:"content"`
+				StructuredContent map[string]interface{}   `json:"structuredContent"`
+				IsError           bool                     `json:"isError"`
+			}
+			_ = json.Unmarshal(raw, &res)
+			if res.IsError && ec.version >= 1.1 {
+				msg := fmt.Sprintf("Tool %q returned an error", tool)
+				for _, c := range res.Content {
+					if c["type"] == "text" {
+						msg = toString(c["text"])
+						break
+					}
+				}
+				return permanentError{fmt.Sprintf("item %d: %s", i, msg)}
+			}
+			toBin := true
+			if v, ok := asMap(p["options"])["convertToBinary"]; ok {
+				toBin = toBool(v)
+			}
+			it := Item{JSON: map[string]interface{}{}, PairedItem: paired(i)}
+			var content []interface{}
+			for _, c := range res.Content {
+				switch typ := toString(c["type"]); {
+				case typ == "text":
+					c["text"] = parseJSONParam(c["text"])
+					content = append(content, c)
+				case toBin && (typ == "image" || typ == "audio"):
+					data, err := base64.StdEncoding.DecodeString(toString(c["data"]))
+					if err != nil {
+						return err
+					}
+					if it.Binary == nil {
+						it.Binary = map[string]interface{}{}
+					}
+					it.Binary[fmt.Sprintf("data_%d", len(it.Binary))] = binaryData(data, toString(c["mimeType"]), "")
+				default:
+					content = append(content, c)
+				}
+			}
+			if res.StructuredContent != nil {
+				it.JSON["structuredContent"] = res.StructuredContent
+			}
+			if len(content) > 0 {
+				it.JSON["content"] = content
+			}
+			out = append(out, it)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return [][]Item{out}, nil
 }

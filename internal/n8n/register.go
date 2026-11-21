@@ -72,7 +72,7 @@ func (s *StaticCredentials) Credential(_ context.Context, _ string, credType str
 // nodeTypes lists every supported n8n node type.
 func nodeTypes() map[string]nodeFunc {
 	b := "n8n-nodes-base."
-	return map[string]nodeFunc{
+	m := map[string]nodeFunc{
 		// triggers
 		b + "manualTrigger":                          passthrough,
 		b + "start":                                  passthrough,
@@ -122,12 +122,27 @@ func nodeTypes() map[string]nodeFunc {
 		b + "googleTasks":                  googleTasksNode,
 		b + "googleAnalytics":              googleAnalyticsNode,
 		b + "s3":                           s3Node,
+		b + "awsS3":                        awsS3Node,
+		b + "renameKeys":                   renameKeysNode,
+		b + "graphql":                      graphqlNode,
+		b + "jwt":                          jwtNode,
+		b + "ssh":                          sshNode,
+		b + "ftp":                          ftpNode,
+		b + "microsoftSql":                 microsoftSQLNode,
+		b + "evaluationTrigger":            passthrough,
+		b + "evaluation":                   evaluationNode,
 		b + "mongoDb":                      mongoDbNode,
 		b + "rssFeedReadTrigger":           rssFeedReadTriggerNode,
+		b + "notionTrigger":                notionTriggerNode,
+		b + "googleCalendarTrigger":        googleCalendarTriggerNode,
+		b + "airtableTrigger":              airtableTriggerNode,
 		b + "dhl":                          dhlNode,
 		b + "n8n":                          n8nAPINode,
 		b + "executeCommand":               executeCommandNode,
 		b + "localFileTrigger":             localFileTriggerNode,
+		b + "dataTable":                    dataTableNode,
+		b + "hubspot":                      hubspotNode,
+		b + "perplexity":                   perplexityNode,
 		b + "if":                           ifNode,
 		b + "filter":                       filterNode,
 		b + "switch":                       switchNode,
@@ -145,6 +160,10 @@ func nodeTypes() map[string]nodeFunc {
 		b + "function":                     functionNode,
 		b + "functionItem":                 functionItemNode,
 	}
+	for typ, s := range restServices {
+		m[typ] = s.run
+	}
+	return m
 }
 
 // Register adds every supported n8n node type to the registry.
@@ -158,6 +177,10 @@ func Register(reg *engine.Registry, opts *Options) {
 	for typ, fn := range extraNodeTypes(opts) {
 		reg.Register(typ, &executor{typ: typ, fn: fn, opts: opts})
 	}
+	for typ := range serviceHooks {
+		// The webhook handler builds the items; the trigger passes them on.
+		reg.Register(typ, &executor{typ: typ, fn: passthrough, opts: opts})
+	}
 }
 
 // Supported reports whether an n8n node type has an implementation.
@@ -166,6 +189,9 @@ func Supported(typ string) bool {
 		return true
 	}
 	if _, ok := extraNodeTypes(&Options{})[typ]; ok {
+		return true
+	}
+	if serviceHooks[typ].handle != nil {
 		return true
 	}
 	return aiSubNodeSupported(typ)
@@ -209,6 +235,7 @@ func extraNodeTypes(opts *Options) map[string]nodeFunc {
 		b + "microsoftOutlook":               outlookNode,
 		b + "editImage":                      editImageNode,
 		lc + "chainSummarization":            chainSummarizationNode,
+		lc + "mcpClient":                     mcpClientNode,
 		lc + "chainRetrievalQa":              chainRetrievalQaNode,
 		b + "summarize":                      summarizeNode,
 		b + "dateTime":                       dateTimeNode,
@@ -239,6 +266,7 @@ func extraNodeTypes(opts *Options) map[string]nodeFunc {
 		"n8n-nodes-mcp.mcpClient":            mcpCommunityNode,
 		"n8n-nodes-mcp.mcpClientTool":        mcpCommunityNode,
 		"@tavily/n8n-nodes-tavily.tavily":    tavilyNode,
+		"@apify/n8n-nodes-apify.apify":       apifyNode,
 		"CUSTOM.scrapeNinja":                 scrapeNinjaNode,
 		"n8n-nodes-scrapeninja.scrapeNinja":  scrapeNinjaNode,
 		"n8n-nodes-infranodus.infranodus":    infranodusNode,
@@ -247,6 +275,9 @@ func extraNodeTypes(opts *Options) map[string]nodeFunc {
 		lc + "vectorStorePGVector":                            vectorStoreNode,
 		lc + "vectorStoreMongoDBAtlas":                        vectorStoreNode,
 		lc + "informationExtractor":                           informationExtractorNode,
+		lc + "googleGemini":                                   googleGeminiNode,
+		lc + "anthropic":                                      anthropicNode,
+		lc + "guardrails":                                     guardrailsNode,
 	}
 }
 

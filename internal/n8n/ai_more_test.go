@@ -108,3 +108,44 @@ return [{ json: { output: out.content, n: this.getInputData().length } }];`}}}),
 		t.Fatalf("langchain code: %v (%s)", got, steps["LC"].Error)
 	}
 }
+
+func TestAgentTool(t *testing.T) {
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		msgs := asList(body["messages"])
+		last := asMap(msgs[len(msgs)-1])
+		reply := func(m map[string]interface{}) {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"message": m}}})
+		}
+		switch {
+		case len(asList(body["tools"])) == 0:
+			reply(map[string]interface{}{"role": "assistant", "content": "inner: " + toString(last["content"])})
+		case last["role"] == "tool":
+			reply(map[string]interface{}{"role": "assistant", "content": "outer got " + toString(last["content"])})
+		default:
+			fn := asMap(asMap(asList(body["tools"])[0])["function"])
+			if fn["name"] != "Researcher" || !strings.Contains(mustJSON(fn["parameters"]), "Prompt__User_Message_") {
+				t.Errorf("agent tool definition: %v", fn)
+			}
+			reply(map[string]interface{}{"role": "assistant", "tool_calls": []interface{}{map[string]interface{}{"id": "1", "type": "function",
+				"function": map[string]interface{}{"name": "Researcher", "arguments": `{"Prompt__User_Message_":"find go news"}`}}}})
+		}
+	}))
+	defer llm.Close()
+	creds := NewStaticCredentials()
+	creds.Set("openAiApi", "*", map[string]interface{}{"apiKey": "k", "url": llm.URL})
+	h := newHarness(t, &Options{Credentials: creds, Outbound: node.OutboundPolicy{AllowedHosts: []string{"127.0.0.1"}}})
+	data := wfJSON(t, []map[string]interface{}{
+		nd("Start", "manualTrigger", 1, nil),
+		lc("Agent", "agent", 2.2, map[string]interface{}{"promptType": "define", "text": "what is new in go?"}),
+		withCred(lc("Model", "lmChatOpenAi", 1, nil), "openAiApi"),
+		lc("Researcher", "agentTool", 2.2, map[string]interface{}{"toolDescription": "Researches topics", "options": map[string]interface{}{"systemMessage": "You research."}}),
+		withCred(lc("Model2", "lmChatOpenAi", 1, nil), "openAiApi"),
+	}, "Start->Agent", "Model~ai_languageModel->Agent", "Researcher~ai_tool->Agent", "Model2~ai_languageModel->Researcher")
+	_, steps := h.run(t, data, "")
+	if got := itemsOf(t, steps["Agent"], 0); len(got) != 1 || got[0]["output"] != "outer got inner: find go news" {
+		t.Fatalf("agent tool: %v (%s)", got, steps["Agent"].Error)
+	}
+}

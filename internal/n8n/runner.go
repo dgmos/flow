@@ -22,6 +22,11 @@ type loopSpec struct {
 
 const cfgLoop = "__loop"
 
+// cfgLoopCycle marks a Loop Over Items node whose body is wired to nodes
+// outside the loop: it runs as a stateful node inside a cyclic region,
+// like n8n executes it.
+const cfgLoopCycle = "__loopCycle"
+
 // extractLoops moves the body of every Loop Over Items (v3) node into the
 // node's config so the engine graph stays acyclic. Inner loops go first.
 func extractLoops(wf *models.Workflow, rep *Report) error {
@@ -29,7 +34,9 @@ func extractLoops(wf *models.Workflow, rep *Report) error {
 		loops := map[string]bool{}
 		for _, n := range wf.Nodes {
 			if n.Type == "n8n-nodes-base.splitInBatches" && toFloatDefault(n.Config[cfgVersion], 1) >= 3 {
-				if _, done := n.Config[cfgLoop]; !done {
+				_, done := n.Config[cfgLoop]
+				_, cyclic := n.Config[cfgLoopCycle]
+				if !done && !cyclic {
 					loops[n.ID] = true
 				}
 			}
@@ -87,6 +94,15 @@ func rewriteLoop(wf *models.Workflow, loopID string, body map[string]bool, rep *
 		names[wf.Nodes[i].ID] = wf.Nodes[i].Name
 		if wf.Nodes[i].ID == loopID {
 			loopNode = &wf.Nodes[i]
+		}
+	}
+	for _, e := range wf.Edges {
+		if body[e.TargetID] && !body[e.SourceID] && (e.SourceID != loopID || e.Condition != "1") {
+			// An edge from outside into the body: run the loop as a
+			// stateful node in a cyclic region instead.
+			loopNode.Config[cfgLoopCycle] = true
+			rep.warn(&rawNode{Name: names[loopID]}, "Loop Over Items %q: edge from %q into the loop body; the loop runs node by node like n8n", names[loopID], names[e.SourceID])
+			return nil
 		}
 	}
 	spec := loopSpec{}
@@ -278,6 +294,9 @@ func splitInBatchesNode(opts *Options) nodeFunc {
 		if ec.version < 3 {
 			return splitInBatchesV1(ec)
 		}
+		if toBool(ec.node.Config[cfgLoopCycle]) {
+			return splitInBatchesV3Stateful(ec)
+		}
 		rawSpec, ok := ec.node.Config[cfgLoop]
 		if !ok {
 			return nil, permanentError{"Loop Over Items: loop body not prepared (import the workflow with the n8n importer)"}
@@ -396,6 +415,50 @@ func splitInBatchesV1(ec *execCtx) ([][]Item, error) {
 	return [][]Item{batch}, nil
 }
 
+// splitInBatchesV3Stateful is Loop Over Items run node by node: the first
+// run stores the input and emits the first batch on "loop" (port 1); each
+// later run collects its input as processed and emits the next batch; when
+// no items are left it emits everything processed on "done" (port 0) and
+// resets.
+func splitInBatchesV3Stateful(ec *execCtx) ([][]Item, error) {
+	size := int(toFloatDefault(mustParam(ec, "batchSize", 1.0), 1))
+	if size < 1 {
+		size = 1
+	}
+	c := ec.data.nodeCtx[ec.node.ID]
+	reset, _ := ec.boolean(0, "options.reset", false)
+	var queue, processed []Item
+	if c == nil || reset {
+		c = map[string]interface{}{"currentRunIndex": 0.0}
+		ec.data.nodeCtx[ec.node.ID] = c
+		for i, it := range ec.items() {
+			it.PairedItem = paired(i)
+			queue = append(queue, it)
+		}
+		c["maxRunIndex"] = float64((len(queue) + size - 1) / size)
+	} else {
+		queue, _ = c["items"].([]Item)
+		processed, _ = c["processed"].([]Item)
+		processed = append(processed, ec.items()...)
+		c["currentRunIndex"] = toFloatDefault(c["currentRunIndex"], 0) + 1
+	}
+	if len(queue) == 0 {
+		delete(ec.data.nodeCtx, ec.node.ID)
+		for i := range processed {
+			processed[i].PairedItem = paired(i)
+		}
+		return [][]Item{processed, nil}, nil
+	}
+	n := size
+	if n > len(queue) {
+		n = len(queue)
+	}
+	batch := append([]Item(nil), queue[:n]...)
+	c["items"], c["processed"] = queue[n:], processed
+	c["noItemsLeft"] = len(queue) == n
+	return [][]Item{nil, batch}, nil
+}
+
 // persistedContext is the part of a node context recorded in a loop step's
 // output for later steps: everything except Split In Batches' pending items.
 func persistedContext(c map[string]interface{}) map[string]interface{} {
@@ -404,7 +467,7 @@ func persistedContext(c map[string]interface{}) map[string]interface{} {
 	}
 	out := make(map[string]interface{}, len(c))
 	for k, v := range c {
-		if k != "items" {
+		if k != "items" && k != "processed" {
 			out[k] = v
 		}
 	}

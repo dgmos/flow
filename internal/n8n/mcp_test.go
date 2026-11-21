@@ -172,6 +172,19 @@ func TestMCPClientToolAgainstServer(t *testing.T) {
 	if len(got) != 1 || !strings.Contains(mustJSON(got[0]["result"]), `"text":"2"`) {
 		t.Fatalf("community executeTool: %v (%s)", got, steps["Exec"].Error)
 	}
+	// Official MCP Client node.
+	official := wfJSON(t, []map[string]interface{}{
+		nd("Start", "manualTrigger", 1, nil),
+		withCred(lc("Call", "mcpClient", 1.1, map[string]interface{}{"endpointUrl": env.srv.URL + "/mcp/calc", "authentication": "bearerAuth",
+			"tool": map[string]interface{}{"__rl": true, "mode": "list", "value": "adder"}, "parameters": map[string]interface{}{"value": map[string]interface{}{"query": "2+3"}}}), "httpBearerAuth"),
+	}, "Start->Call")
+	if _, rep, _ := Import(official, ImportOptions{}); !rep.Runnable {
+		t.Fatalf("official MCP client not runnable: %+v", rep.Blocking)
+	}
+	_, steps = h.run(t, official, "")
+	if got := itemsOf(t, steps["Call"], 0); len(got) != 1 || mustJSON(got[0]["content"]) != `[{"text":5,"type":"text"}]` {
+		t.Fatalf("official MCP client: %v (%s)", got, steps["Call"].Error)
+	}
 	ec := &execCtx{ctx: context.Background(), opts: env.opts}
 	if _, err := ec.mcpConnect(mcpConfig{transport: "stdio", command: "npx"}); err == nil || !strings.Contains(err.Error(), "AllowLocalProcesses") {
 		t.Fatalf("STDIO must be refused by default: %v", err)

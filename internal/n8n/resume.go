@@ -159,6 +159,12 @@ func formPageDefinition(params map[string]interface{}) map[string]interface{} {
 		def["description"] = o["formDescription"]
 		def["buttonLabel"] = o["buttonLabel"]
 	}
+	// Wait nodes resumed by a form keep title and description at the top.
+	for k, d := range map[string]string{"formTitle": "title", "formDescription": "description"} {
+		if v, ok := params[k]; ok && def[d] == nil {
+			def[d] = v
+		}
+	}
 	return def
 }
 

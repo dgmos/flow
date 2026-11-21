@@ -1101,6 +1101,9 @@ func (ec *execCtx) s3Client(credType string) (*s3Client, error) {
 	}
 	region := firstNonEmpty(credString(c, "region"), "us-east-1")
 	ep := credString(c, "endpoint")
+	if toBool(c["customEndpoints"]) {
+		ep = credString(c, "s3Endpoint")
+	}
 	if ep == "" {
 		ep = "https://s3." + region + ".amazonaws.com"
 	}
@@ -1186,6 +1189,22 @@ func s3Node(ec *execCtx) ([][]Item, error) {
 	s, err := ec.s3Client("s3")
 	if err != nil {
 		return nil, err
+	}
+	return s3Operations(ec, s)
+}
+
+// awsS3Node is n8n's AWS S3 node: the S3 operations with an AWS credential
+// (an optional custom S3 endpoint).
+func awsS3Node(ec *execCtx) ([][]Item, error) {
+	s, err := ec.s3Client("aws")
+	if err != nil {
+		return nil, err
+	}
+	if u := ec.apiBase("awsS3", ""); u != "" {
+		if s.endpoint, err = url.Parse(u); err != nil {
+			return nil, err
+		}
+		s.pathStyle = true
 	}
 	return s3Operations(ec, s)
 }
@@ -1323,6 +1342,69 @@ func s3Operations(ec *execCtx, s *s3Client) ([][]Item, error) {
 			name, _ := ec.str(i, "name", "")
 			if _, err := s.do("PUT", name, "", nil, []byte{}, nil); err != nil {
 				return nil, err
+			}
+			return one(map[string]interface{}{"success": true}), nil
+		case "bucket.delete":
+			name, _ := ec.str(i, "name", "")
+			if _, err := s.do("DELETE", name, "", nil, nil, nil); err != nil {
+				return nil, err
+			}
+			return one(map[string]interface{}{"success": true}), nil
+		case "file.copy":
+			src, _ := ec.str(i, "sourcePath", "")
+			dst, _ := ec.str(i, "destinationPath", "")
+			db, dk, _ := strings.Cut(strings.TrimPrefix(dst, "/"), "/")
+			if db == "" || dk == "" || strings.Count(strings.TrimPrefix(src, "/"), "/") < 1 {
+				return nil, permanentError{"S3: source and destination paths must look like /bucket/key"}
+			}
+			h := map[string]string{"x-amz-copy-source": "/" + (&url.URL{Path: strings.TrimPrefix(src, "/")}).EscapedPath()}
+			for k, v := range fieldsOf(ec, i, "additionalFields") {
+				switch k {
+				case "acl":
+					h["x-amz-acl"] = s3HeaderValue(k, toString(v))
+				case "storageClass":
+					h["x-amz-storage-class"] = s3HeaderValue(k, toString(v))
+				}
+			}
+			res, err := s.do("PUT", db, dk, nil, []byte{}, h)
+			if err != nil {
+				return nil, err
+			}
+			var cr struct {
+				ETag         string `xml:"ETag"`
+				LastModified string `xml:"LastModified"`
+			}
+			_ = xml.Unmarshal(res.body, &cr)
+			return one(map[string]interface{}{"CopyObjectResult": map[string]interface{}{"ETag": cr.ETag, "LastModified": cr.LastModified}}), nil
+		case "folder.delete":
+			prefix, _ := ec.str(i, "folderKey", "")
+			if prefix == "" {
+				return nil, permanentError{"S3: folder key is required"}
+			}
+			prefix = strings.TrimSuffix(prefix, "/") + "/"
+			q := url.Values{"list-type": {"2"}, "prefix": {prefix}}
+			for page := 0; page < 1000; page++ {
+				res, err := s.do("GET", bucket, "", q, nil, nil)
+				if err != nil {
+					return nil, err
+				}
+				var lr struct {
+					Keys        []string `xml:"Contents>Key"`
+					IsTruncated bool     `xml:"IsTruncated"`
+					NextToken   string   `xml:"NextContinuationToken"`
+				}
+				if err := xml.Unmarshal(res.body, &lr); err != nil {
+					return nil, permanentError{"S3: invalid list response"}
+				}
+				for _, k := range lr.Keys {
+					if _, err := s.do("DELETE", bucket, k, nil, nil, nil); err != nil {
+						return nil, err
+					}
+				}
+				if !lr.IsTruncated {
+					break
+				}
+				q.Set("continuation-token", lr.NextToken)
 			}
 			return one(map[string]interface{}{"success": true}), nil
 		}

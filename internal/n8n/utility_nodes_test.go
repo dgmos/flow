@@ -79,3 +79,25 @@ func TestDecompressLimits(t *testing.T) {
 		t.Fatalf("archive within limits: %v", err)
 	}
 }
+
+func TestEvaluationNodesOutsideEvaluation(t *testing.T) {
+	data := wfJSON(t, []map[string]interface{}{
+		nd("Start", "manualTrigger", 1, nil),
+		nd("Eval Trigger", "evaluationTrigger", 4.7, map[string]interface{}{"source": "dataTable"}),
+		nd("Seed", "set", 3.4, map[string]interface{}{"mode": "raw", "jsonOutput": `{"q":"hi"}`}),
+		nd("Evaluating?", "evaluation", 4.8, map[string]interface{}{"operation": "checkIfEvaluating"}),
+		nd("Metrics", "evaluation", 4.8, map[string]interface{}{"operation": "setMetrics"}),
+		nd("Normal", "noOp", 1, nil),
+	}, "Start->Seed", "Eval Trigger->Seed", "Seed->Evaluating?", "Evaluating?:0->Metrics", "Evaluating?:1->Normal")
+	_, rep, _ := Import(data, ImportOptions{})
+	if !rep.Runnable {
+		t.Fatalf("not runnable: %+v", rep.Blocking)
+	}
+	_, steps := newHarness(t, nil).run(t, data, "")
+	if got := itemsOf(t, steps["Normal"], 0); len(got) != 1 || got[0]["q"] != "hi" {
+		t.Fatalf("normal: %v", got)
+	}
+	if s := steps["Metrics"]; s != nil && s.Status == "COMPLETED" && len(itemsOf(t, s, 0)) > 0 {
+		t.Fatal("evaluation branch ran")
+	}
+}

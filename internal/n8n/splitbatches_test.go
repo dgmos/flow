@@ -48,3 +48,21 @@ func TestSplitInBatchesV2EndsWhenEmpty(t *testing.T) {
 		t.Fatalf("out: %v, want all 5 items in order", got)
 	}
 }
+
+// Loop Over Items whose body node is also fed from outside the loop (here
+// it runs before the loop too): the loop runs node by node like in n8n.
+func TestLoopOverItemsCrossingEdges(t *testing.T) {
+	nodes := seedRows()
+	nodes[3]["typeVersion"] = 3
+	nodes = append(nodes, nd("Done", "noOp", 1, nil))
+	data := wfJSON(t, nodes, "Start->Seed", "Seed->Rows", "Rows->Work", "Work->Split", "Split:1->Work", "Split:0->Done")
+	_, rep, _ := Import(data, ImportOptions{})
+	if !rep.Runnable || len(rep.Warnings) == 0 {
+		t.Fatalf("runnable=%v blocking=%+v warnings=%+v", rep.Runnable, rep.Blocking, rep.Warnings)
+	}
+	_, steps := newHarness(t, nil).run(t, data, "")
+	got := itemsOf(t, steps["Done"], 0)
+	if len(got) != 5 || got[0]["n"] != 100.0 || got[4]["n"] != 500.0 {
+		t.Fatalf("done: %v, want 100..500", got)
+	}
+}
